@@ -217,7 +217,7 @@
 
   var carrier = sGet(KEY_C);
   if (['clickpost', 'yupack', 'yamato'].indexOf(carrier) < 0) carrier = 'clickpost';
-  var rows = [], over = 0, truncated = false;
+  var rows = [], over = 0, truncated = false, dropped = 0, failed = false;
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function fmtN(n) { return (Math.round(n * 10) / 10).toString(); }
@@ -359,9 +359,11 @@
     $('csv-yp').hidden = carrier !== 'yupack';
     $('csv-go').textContent = rows.length + '件をCSVにする';
     if (!$('src').value.trim()) { res.appendChild(el('p', 'empty', '左（スマホでは上）の欄に、届いた文を貼ってください。')); return; }
+    if (failed) { res.appendChild(el('p', 'msg err', 'この文はうまく分けられませんでした。前の結果は消しました。お手数ですが、住所・名前を手で入力してください。')); return; }
     if (!rows.length) { res.appendChild(el('p', 'empty', '郵便番号か、都道府県から始まる住所が見つかりませんでした。都道府県から書いた住所を貼ってください。')); return; }
     if (over) res.appendChild(el('p', 'msg err', '41人目以降（' + over + '人分）は表示していません。1回40人までです。'));
     if (truncated) res.appendChild(el('p', 'msg err', '5,000字を超えた分は読んでいません。'));
+    if (dropped) res.appendChild(el('p', 'msg err', '空行で区切った中に、郵便番号も都道府県も見つからなかった塊が' + dropped + 'つあります。その分は表に入れていません。'));
     if (rows.length === 1) {
       res.classList.add('single');
       res.appendChild(buildCard(rows[0], 0));
@@ -382,9 +384,15 @@
   function reparse() {
     var t = $('src').value;
     $('src-n').textContent = t.length.toLocaleString();
-    var p = AS.parse(t);
+    var p;
+    try { p = AS.parse(t); } catch (e) {
+      // 分けられなかったときは、前の結果を残さずに消して知らせる
+      rows = []; over = 0; truncated = false; dropped = 0; failed = true;
+      hideCsvMsg(); render(); return;
+    }
+    failed = false;
     rows = p.rows.map(function (r) { r.ov = { clickpost: {}, yupack: {}, yamato: {} }; r.edited = false; return r; });
-    over = p.over; truncated = p.truncated;
+    over = p.over; truncated = p.truncated; dropped = p.dropped || 0;
     hideCsvMsg();
     render();
   }

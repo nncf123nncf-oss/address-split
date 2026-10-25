@@ -269,11 +269,12 @@ var AS = (function () {
   function splitBlocks(text) {
     var t = norm(String(text || '').slice(0, MAX_INPUT));
     var blocks = t.split(/\n\s*\n/).map(function (b) { return b.trim(); }).filter(Boolean);
-    var out = [];
+    var out = [], dropped = 0;
     blocks.forEach(function (b) {
       if (PREF_RE.test(b) || ZIP_RE.test(maskTel(b)) || b.split('\n').some(muniStart)) out.push(b);
+      else if (blocks.length > 1) dropped++;
     });
-    return { blocks: out.slice(0, MAX_ROWS), over: Math.max(0, out.length - MAX_ROWS) };
+    return { blocks: out.slice(0, MAX_ROWS), over: Math.max(0, out.length - MAX_ROWS), dropped: dropped };
   }
   function maskTel(s) {
     return s.replace(TEL_RE, function (m) {
@@ -391,17 +392,29 @@ var AS = (function () {
   // 挨拶・決まり文句（名前の候補から外す。住所の続きの行の判定には使わない）
   var GREET = /(こんにちは|こんばんは|おはよう|ありがとう|お願い|よろしく|宜しく|ください|お世話|失礼|申し訳|すみません|はじめまして|初めまして|送って|届け|購入|注文|件|です。|します|ました|ません|ます[。!！]?$|住所|電話|発送|下さい|お疲れ|以上|了解|承知)/;
   var LABEL_ONLY = /^(お?名前|氏名|宛名|ご?住所|電話番号?|携帯|郵便番号|メール(アドレス)?|以上|宜しく|よろしく|了解|承知しました)[:：]?$/;
-  var BUILD_WORD = /(マンション|ハイツ|ビル|アパート|コーポ|レジデンス|タワー|荘|号室|メゾン|ハウス|パレス|ヒルズ|テラス|コート|団地|ハイム|シャトー|カーサ|グラン|ドミール|プラザ|ガーデン|フラット|寮|棟)/;
+  var BUILD_WORD = /(マンション|ハイツ|ビル|アパート|コーポ|レジデンス|タワー|荘|号室|メゾン|ハウス|パレス|ヒルズ|テラス|コート|団地|ハイム|シャトー|カーサ|グラン|ドミール|プラザ|ガーデン|フラット|寮|棟|館)/;
   var ADDR_TAIL = /(市|区|町|村|郡|丁目|番地)$|^字|[町村]字/;
-  // 宛先の一部になる語（「佐藤様方」「株式会社みほん 総務部」など）
-  var ORG_WORD = /(様方|気付|株式会社|有限会社|合同会社|\(株\)|\(有\)|事務所|[部課]$)/;
+  // 宛先の一部になる語（「佐藤様方」「田中方」「株式会社みほん 総務部」など）
+  var ORG_WORD = /(様方|気付|株式会社|有限会社|合同会社|\(株\)|\(有\)|事務所|[部課]$|\S方$|商店)/;
   // 敬称の直前がこれで終わるときは敬称とみない（「お疲れ様です」「皆さま」「お客様」「みほん工房様（お店宛て）」「おかげさまで」）
-  var NOT_NAME_TAIL = /((^|[、,。!！])(皆|みな|みんな)|お疲れ|ご苦労|お世話|お客|ありがとう|奥|ご主人|お子|作家|担当者?|工房|ショップ|ストア|店|おかげ|お陰|お互い|ご馳走|ごちそう)$/;
+  var NOT_NAME_TAIL = /((^|[、,。!！])(皆|みな|みんな)|お疲れ|ご苦労|お世話|お客|ありがとう|ご主人|お子|作家|担当者?|工房|ショップ|ストア|店|おかげ|お陰|お互い|ご馳走|ごちそう)$/;
   // 挨拶の語尾（住所の行・続きの行の末尾から落とす）
   var POLITE_TAIL = /\s*(です|になります|にお願いします|でお願いします|でお願い致します|でお願いいたします|までお願いします|宛てでお願いします|宛にお願いします|へお願いします|よろしくお願いします|宜しくお願いします|よろしくお願い致します|お願いします|まで)[。!！]*$/;
-  // 住所の続きではなくメモらしい言葉
-  var MEMO_WORD = /(希望|指定|までに|\d+\s*(点|個|枚|箱)|円|\d+月|\d+日|\d+時|お願い|嬉し|ください|下さい|不在|置き配|宜しく|よろしく)/;
+  // 住所の続きではなくメモらしい言葉（「希望が丘」「円山町」のような町名は除く）
+  var MEMO_WORD = /(希望(?![がケヶ]丘)|指定|までに|\d+\s*(点|個|枚|箱)|\d+\s*円|\d+月|\d+日|\d+時|お願い|嬉し|ください|下さい|不在|置き配|宜しく|よろしく|注文|件)/;
   function stripHonorTail(s) { return s.replace(/(様|さま|殿)$/, '').trim(); }
+  // 挨拶だけの行か（捨ててよい行）。建物名・宛先らしい語・「〇〇に届けて」の〇〇が残る行は挨拶とみない
+  function greetingOnly(L) {
+    var s = String(L).replace(POLITE_TAIL, '').trim();
+    if (!s) return true;
+    // 語尾を落としたあとに挨拶でない字が残るなら、挨拶だけの行ではない（「スカイ壱番館 宛にお願いします」）
+    if (!GREET.test(s)) return false;
+    if (BUILD_WORD.test(s) || ORG_WORD.test(s) || /\d/.test(s)) return false;
+    var d = /([^\s、。,!！]+?)(に|へ|まで|宛て?で?)(届け|送|お願い)/.exec(s);
+    if (d && !/^(こちら|ここ|以下|下記|そちら|この住所|上記)$/.test(d[1])) return false;
+    if (/[ァ-ヶー]{5,}/.test(s)) return false;
+    return true;
+  }
   // 名前の候補になる短い行（住所・郵便番号・電話・挨拶・ラベルを除く）
   function guessCands(lines, addrLine) {
     var cands = [];
@@ -417,16 +430,17 @@ var AS = (function () {
   }
   function findName(lines, addrLine) {
     var honor = '', name = '', how = '', at = -1, note = '';
-    // 1) 「様」「さま」「宛」「殿」「御中」の直前。後ろが区切り（行末・空白・句読点など）のものだけを敬称とみる
-    //    （「御殿場市」「様似町」「殿町」の字を敬称と取り違えないため）。「様方」は飛ばし、行の中では最後の敬称を使う。
-    //    敬称のある行が複数あれば、住所の行に近い行を使う（「山田様、ありがとうございます」の書き出しより宛名の行を優先）
+    // 1) 「様」「さま」「殿」「御中」「宛」の直前。後ろが区切り（行末・空白・句読点など）のものだけを敬称とみる
+    //    （「御殿場市」「様似町」「殿町」の字を敬称と取り違えないため）。「宛」は後ろに「に」「で」が続く形（「〇〇宛にお願いします」）を除く。
+    //    「様方」は飛ばし、行の中では最後の敬称を使う。敬称のある行が複数あれば、住所の行に近い行を使う
     var found = [];
     lines.forEach(function (L, i) {
-      var re = /(様方|様|さま|宛て?|殿|御中)(?=$|[\s、。,!！.]|です|へ|まで|で|に)/g, hm, cand = null;
+      var re = /(様方|様|さま|殿|御中)(?=$|[\s、。,!！.]|です|へ|まで|で|に)|(宛て?)(?=$|[\s、。,!！.]|です)/g, hm, cand = null;
       while ((hm = re.exec(L))) {
-        if (hm[1] === '様方') continue;
+        var w = hm[1] || hm[2];
+        if (w === '様方') continue;
         if (NOT_NAME_TAIL.test(L.slice(0, hm.index))) continue;
-        cand = { index: hm.index, word: hm[1] };
+        cand = { index: hm.index, word: w };
       }
       if (!cand) return;
       var before = L.slice(0, cand.index).replace(/[\s:：]+$/, '');
@@ -434,7 +448,7 @@ var AS = (function () {
       var picked = [], lim = cand.word === '御中' ? 20 : 6;
       for (var t = toks.length - 1; t >= 0 && picked.length < 2; t--) {
         var tk = toks[t];
-        if (!tk || /\d/.test(tk) || chars(tk) > lim || (cand.word !== '御中' && BUILD_WORD.test(tk)) || PREF_RE.test(tk) || /様方$/.test(tk) || GREET.test(tk)) break;
+        if (!tk || /\d/.test(tk) || chars(tk) > lim || (cand.word !== '御中' && (BUILD_WORD.test(tk) || ORG_WORD.test(tk))) || PREF_RE.test(tk) || GREET.test(tk)) break;
         // 住所と同じ行で2語目を足すとき、カタカナだけの語・長い語は建物名かもしれないので足さない
         if (picked.length === 1 && i === addrLine && (/^[ァ-ヶー・]+$/.test(tk) || chars(tk) >= 5)) break;
         picked.unshift(tk);
@@ -449,7 +463,7 @@ var AS = (function () {
       name = stripHonorTail(f0.name);
       honor = f0.cand.word === '御中' ? '御中' : f0.cand.word === '殿' ? '殿' : /^宛/.test(f0.cand.word) ? '宛' : '様';
       how = 'honor'; at = f0.i;
-      var rest = (f0.L.slice(0, f0.L.lastIndexOf(f0.name, f0.cand.index)) + ' ' + f0.L.slice(f0.cand.index + f0.cand.word.length)).trim();
+      var rest = (f0.L.slice(0, f0.L.lastIndexOf(f0.name, f0.cand.index)) + ' ' + f0.L.slice(f0.cand.index + f0.cand.word.length)).replace(/\s+/g, ' ').trim();
       lines[at] = rest;
       // 敬称で決めても、ほかに名前の候補があるとき・住所から離れているとき・同じ行に挨拶が残るときは確かめてもらう
       var others = guessCands(lines, addrLine).filter(function (c) { return c.k !== at; });
@@ -464,9 +478,19 @@ var AS = (function () {
         var lm = /(?:お?名前|氏名|宛名)\s*(?:[:：]|は)\s*(.+)$/.exec(lines[j]);
         var val = lm ? lm[1] : (/^(お?名前|氏名|宛名)[:：]?$/.test(lines[j]) && lines[j + 1] && !/\d/.test(lines[j + 1]) ? lines[j + 1] : '');
         if (!val) continue;
-        name = stripHonorTail(val.replace(/(様|さま|殿)?\s*(で|に)?\s*(お願いします|お願い致します|お願いいたします|です|と申します)?[。!！]*$/, '').trim());
+        // 値の後ろに続く住所・建物は名前に入れず、その行に残す
+        var whole = val.replace(/(様|さま|殿)?\s*(で|に)?\s*(お願いします|お願い致します|お願いいたします|です|と申します)?[。!！]*$/, '').trim();
+        var pm = PREF_RE.exec(whole), cut = pm ? whole.slice(0, pm.index).trim() : whole;
+        var toks2 = cut.split(' '), keep = [];
+        for (var q = 0; q < toks2.length && keep.length < 2; q++) {
+          if (!toks2[q] || /\d|〒/.test(toks2[q]) || BUILD_WORD.test(toks2[q])) break;
+          keep.push(stripHonorTail(toks2[q]));
+        }
+        name = keep.join(' ').trim();
         if (!name) continue;
-        how = 'label'; at = lm ? j : j + 1; lines[j] = ''; if (!lm) lines[j + 1] = '';
+        var leftover = whole.slice(whole.indexOf(keep[keep.length - 1]) + keep[keep.length - 1].length).replace(/^(様|さま|殿)/, '').trim();
+        how = 'label'; at = lm ? j : j + 1;
+        if (lm) lines[j] = (lines[j].slice(0, lm.index) + ' ' + leftover).trim(); else { lines[j] = ''; lines[j + 1] = leftover; }
         break;
       }
     }
@@ -490,8 +514,24 @@ var AS = (function () {
     if (/\d/.test(s) || BUILD_WORD.test(s) || /(号室|棟|階|[0-9]F)/.test(s) || ADDR_TAIL.test(s) || ORG_WORD.test(s)) return s;
     return null;
   }
+  // 新しい住所の始まりか（都道府県名のあとに市区町村が続く）。「北海道ビル」のような建物名は住所の始まりとみない
+  function newAddrAt(L) {
+    var m = PREF_RE.exec(L);
+    if (!m) return -1;
+    var rest = L.slice(m.index + m[1].length);
+    return (matchMuni(m[1], rest) || /^[^\s\d]{1,6}?[市区町村郡]/.test(rest)) ? m.index : -1;
+  }
+  // 1行から、郵便番号・電話番号（伏せた部分）・その見出しを取り除く
+  function cleanLine(L, zipText) {
+    var s = String(L);
+    if (zipText) s = s.replace(zipText, ' ');
+    s = s.replace(/〒?\s*(?<![\d-])\d{3}-?\d{4}(?![\d-])/g, function (m) { return /^〒/.test(m) || m === s.trim() ? ' ' : m; });
+    s = s.replace(/(電話番号?|携帯|TEL|Tel|tel|ＴＥＬ)?\s*[:：は]?\s*#{6,}\s*(です)?/g, ' ');
+    return s.replace(/\s+/g, ' ').trim();
+  }
 
   // ---- 1件を部品に分ける ----
+  // 貼った文の字は、どこかの欄に入るか・確認に出すか・挨拶として捨てるかのどれかにする（黙って落とさない）
   function parseOne(block) {
     var checks = [];
     var p = { zip: '', name: '', honor: '様', pref: '', city: '', town: '', chome: '', banchi: '', go: '', building: '', tel: '', numText: '', rawAddr: '', checks: checks };
@@ -499,65 +539,75 @@ var AS = (function () {
     if (tel) p.tel = tel;
     var masked = maskTel(block);
     var zm = ZIP_RE.exec(masked);
+    var zipText = zm ? zm[0].trim() : '';
     var lines = masked.split('\n').map(function (l) { return l.trim(); });
     // 郵便番号として数えるのは、行頭か「〒」の後ろの7桁だけ（建物名の中の数字を数えない）
     var nZip = (masked.match(/(?:^|〒)\s*\d{3}-?\d{4}(?![\d-])/gm) || []).length;
-    var nPref = lines.filter(function (l) { return PREF_RE.test(l); }).length;
+    var nPref = lines.filter(function (l) { return newAddrAt(l) >= 0; }).length;
     if (zm) p.zip = zm[1] + '-' + zm[2];
     else checks.push({ f: 'zip', msg: '郵便番号が見つかりませんでした' });
     if (nZip > 1 || nPref > 1) checks.push({ f: 'zip', msg: '郵便番号か都道府県が2回以上出てきました。最初の1人分だけを入れています。2人分なら空行で区切ってください' });
     // 住所の行: 都道府県名が出る最初の行。なければ市区町村から始まる行
-    var addrLine = -1, start = -1, prefFill = '';
-    for (var i = 0; i < lines.length; i++) {
-      var pm = PREF_RE.exec(lines[i]);
-      if (pm) { addrLine = i; start = pm.index; break; }
-    }
-    if (addrLine < 0) {
-      for (var j = 0; j < lines.length; j++) {
-        var s0 = lines[j].replace(/^〒?\s*\d{3}-?\d{4}\s*/, '');
-        var owner = prefFromMuni(s0);
-        if (owner) { addrLine = j; start = lines[j].length - s0.length; prefFill = owner; break; }
+    function findAddrLine() {
+      for (var i = 0; i < lines.length; i++) {
+        var a = newAddrAt(lines[i]);
+        if (a < 0) { var pm0 = PREF_RE.exec(lines[i]); a = pm0 && !/ビル|ハイツ|マンション|タワー|会館|センター/.test(lines[i].slice(pm0.index + pm0[1].length, pm0.index + pm0[1].length + 6)) ? pm0.index : -1; }
+        if (a >= 0) return { line: i, start: a, fill: '' };
       }
+      for (var j = 0; j < lines.length; j++) {
+        var s0 = cleanLine(lines[j], zipText);
+        var owner = prefFromMuni(s0);
+        if (owner) return { line: j, start: lines[j].indexOf(s0), fill: owner };
+      }
+      return { line: -1, start: -1, fill: '' };
     }
-    var nm = findName(lines, addrLine);
+    var al = findAddrLine();
+    var nm = findName(lines, al.line);
     p.name = nm.name; p.honor = nm.honor;
     if (!p.name) checks.push({ f: 'name', msg: '名前が見つかりませんでした' });
     else if (nm.how === 'guess') checks.push({ f: 'name', msg: '「' + p.name + '」を名前として入れました。名前でなければ直してください' });
     else if (nm.note) checks.push({ f: 'name', msg: nm.note });
+    if (nm.how === 'label' && (/\d/.test(p.name) || BUILD_WORD.test(p.name))) checks.push({ f: 'name', msg: '名前の欄の「' + p.name + '」に住所や建物が混ざっていないか確認してください' });
+    // 名前を抜いたあとで、住所の行と都道府県の位置を取り直す（名前が同じ行の前にあると位置がずれるため）
+    al = findAddrLine();
+    var addrLine = al.line, start = al.start, prefFill = al.fill;
 
+    var skipped = [];
+    function note(L) { var c = cleanLine(L, zipText); if (c && !greetingOnly(c)) skipped.push(c); }
     if (addrLine < 0) {
       checks.push({ f: 'pref', msg: '都道府県から始まる住所が見つかりませんでした' });
+      lines.forEach(note);
+      if (skipped.length) checks.push({ f: 'building', msg: 'どの欄にも入れていない行があります: 「' + skipped.slice(0, 10).join('」「') + '」' });
       return finish(p);
     }
-    // 住所の文字列: 都道府県から。後ろの行は3行まで、住所の続きらしい行だけをつなぐ（郵便番号だけの行・電話の行は飛ばす）
-    // 住所の後ろにあって住所に入れなかった行は、数字の有無にかかわらず確認に出す（挨拶だけの行・名前の行は除く）
-    var segs = [lines[addrLine].slice(start).replace(POLITE_TAIL, '')], joined = [], skipped = [], joining = true;
+    // 住所の行より前の行と、同じ行で都道府県より前の字
+    for (var b = 0; b < addrLine; b++) note(lines[b]);
+    note(lines[addrLine].slice(0, start));
+    // 住所の文字列: 都道府県から。後ろの行は3行まで、住所の続きらしい行だけをつなぐ
+    // 名前の行は、名前を抜いた残りを同じように見る（その行のあとはつながない）
+    var segs = [cleanLine(lines[addrLine].slice(start), zipText).replace(POLITE_TAIL, '')], joined = [], joining = true;
     for (var k = addrLine + 1; k < lines.length; k++) {
-      var Lk = lines[k];
-      if (k === nm.line && nm.line !== addrLine) { joining = false; continue; }
-      if (!Lk) continue;
-      if (PREF_RE.test(Lk)) break;
-      if (/^〒?\s*\d{3}-?\d{4}$/.test(Lk) || /#{6,}/.test(Lk)) continue;
+      var Lk = cleanLine(lines[k], zipText);
+      var isNameLine = (k === nm.line);
+      if (!Lk) { if (isNameLine) joining = false; continue; }
+      if (newAddrAt(Lk) >= 0) { for (var r = k; r < lines.length; r++) note(lines[r]); break; }
       if (joining && joined.length < 3) {
         var c = contLine(Lk);
-        if (c) { segs.push(c); joined.push(c); continue; }
+        if (c) { segs.push(c); joined.push(c); if (isNameLine) joining = false; continue; }
       }
       joining = false;
-      if (GREET.test(Lk) && !/\d/.test(Lk) && !BUILD_WORD.test(Lk) && !ORG_WORD.test(Lk)) continue;
-      skipped.push(Lk);
+      note(Lk);
     }
     if (joined.length) checks.push({ f: 'building', msg: '次の行を住所の続きとしてつなぎました: 「' + joined.join('」「') + '」' });
-    if (skipped.length) checks.push({ f: 'building', msg: '住所の後ろの行を住所に入れていません: 「' + skipped.slice(0, 3).join('」「') + '」' + (skipped.length > 3 ? ' ほか' + (skipped.length - 3) + '行' : '') + '。住所の一部なら直してください' });
-    var addr = segs.join(' ');
-    if (zm) { var zi = addr.indexOf(zm[0].trim()); if (zi >= 0) addr = addr.slice(0, zi) + ' ' + addr.slice(zi + zm[0].trim().length); }
-    addr = addr.replace(/#+/g, ' ').replace(/(電話|TEL|tel|Tel)[:：]?\s*$/, '');
-    addr = addr.replace(/\s+/g, ' ').trim().replace(POLITE_TAIL, '');
+    if (skipped.length) checks.push({ f: 'building', msg: 'どの欄にも入れていない文字があります: 「' + skipped.slice(0, 10).join('」「') + '」' + (skipped.length > 10 ? ' ほか' + (skipped.length - 10) + '行' : '') + '。住所や名前の一部なら直してください' });
+    var addr = segs.join(' ').replace(/(電話|TEL|tel|Tel)[:：]?\s*$/, '').replace(/\s+/g, ' ').trim().replace(POLITE_TAIL, '');
     if (prefFill) {
       p.pref = prefFill;
       checks.push({ f: 'pref', msg: '都道府県が書かれていなかったため「' + prefFill + '」を補いました' });
     } else {
       var pm2 = PREF_RE.exec(addr);
-      p.pref = pm2[1]; addr = addr.slice(pm2[1].length).trim();
+      if (!pm2) { checks.push({ f: 'pref', msg: '都道府県が見つかりませんでした' }); p.town = addr; return finish(p); }
+      p.pref = pm2[1]; addr = addr.slice(pm2.index + pm2[1].length).trim();
     }
     p.rawAddr = (prefFill ? '' : p.pref) + addr;
     p.prefFilled = !!prefFill;
@@ -596,7 +646,7 @@ var AS = (function () {
   }
   function parse(text) {
     var s = splitBlocks(text);
-    return { rows: s.blocks.map(parseOne), over: s.over, truncated: String(text || '').length > MAX_INPUT };
+    return { rows: s.blocks.map(parseOne), over: s.over, dropped: s.dropped, truncated: String(text || '').length > MAX_INPUT };
   }
 
   // 丁目・番地・号の表記（手で直した後はここから作り直す）
@@ -834,7 +884,7 @@ var AS = (function () {
 
   var carrier = sGet(KEY_C);
   if (['clickpost', 'yupack', 'yamato'].indexOf(carrier) < 0) carrier = 'clickpost';
-  var rows = [], over = 0, truncated = false;
+  var rows = [], over = 0, truncated = false, dropped = 0, failed = false;
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function fmtN(n) { return (Math.round(n * 10) / 10).toString(); }
@@ -976,9 +1026,11 @@ var AS = (function () {
     $('csv-yp').hidden = carrier !== 'yupack';
     $('csv-go').textContent = rows.length + '件をCSVにする';
     if (!$('src').value.trim()) { res.appendChild(el('p', 'empty', '左（スマホでは上）の欄に、届いた文を貼ってください。')); return; }
+    if (failed) { res.appendChild(el('p', 'msg err', 'この文はうまく分けられませんでした。前の結果は消しました。お手数ですが、住所・名前を手で入力してください。')); return; }
     if (!rows.length) { res.appendChild(el('p', 'empty', '郵便番号か、都道府県から始まる住所が見つかりませんでした。都道府県から書いた住所を貼ってください。')); return; }
     if (over) res.appendChild(el('p', 'msg err', '41人目以降（' + over + '人分）は表示していません。1回40人までです。'));
     if (truncated) res.appendChild(el('p', 'msg err', '5,000字を超えた分は読んでいません。'));
+    if (dropped) res.appendChild(el('p', 'msg err', '空行で区切った中に、郵便番号も都道府県も見つからなかった塊が' + dropped + 'つあります。その分は表に入れていません。'));
     if (rows.length === 1) {
       res.classList.add('single');
       res.appendChild(buildCard(rows[0], 0));
@@ -999,9 +1051,15 @@ var AS = (function () {
   function reparse() {
     var t = $('src').value;
     $('src-n').textContent = t.length.toLocaleString();
-    var p = AS.parse(t);
+    var p;
+    try { p = AS.parse(t); } catch (e) {
+      // 分けられなかったときは、前の結果を残さずに消して知らせる
+      rows = []; over = 0; truncated = false; dropped = 0; failed = true;
+      hideCsvMsg(); render(); return;
+    }
+    failed = false;
     rows = p.rows.map(function (r) { r.ov = { clickpost: {}, yupack: {}, yamato: {} }; r.edited = false; return r; });
-    over = p.over; truncated = p.truncated;
+    over = p.over; truncated = p.truncated; dropped = p.dropped || 0;
     hideCsvMsg();
     render();
   }
