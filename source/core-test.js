@@ -313,7 +313,7 @@ eq('W1 ate ni', has(one('〒000-0012\n東京都千代田区見本1-2\nスカイ�
 const x1 = one('ご注文番号 1234567\n〒000-0012\n東京都千代田区見本1-2\n山田花子様');
 eq('X1 order no before zip', [x1.zip, shown(x1, /1234567/)], ['000-0012', true]);
 const x1b = one('注文番号：1234567です\n東京都千代田区見本1-2\n山田花子様');
-eq('X1 loose zip check', [x1b.zip, has(x1b, /「〒」も行頭もない7桁/)], ['123-4567', true]);
+eq('X1 order no not zip', [x1b.zip, has(x1b, /郵便番号が見つかりません/), shown(x1b, /1234567/)], ['', true, true]);
 const x2 = t => one('〒000-0012\n東京都千代田区見本1-2\n' + t);
 eq('X2 greet+name', x2('よろしくお願いします。山田花子').name, '山田花子');
 eq('X2 todokesaki label', one('お届け先：山田花子様\n〒000-0012\n東京都千代田区見本1-2').name, '山田花子');
@@ -336,6 +336,32 @@ eq('Y4 name+tel', one('〒000-0012\n東京都千代田区見本1-2\n山田花子
 eq('Z1 paren yomi', one('〒000-0012\n東京都千代田区見本1-2\n山田花子(やまだはなこ)様').name, '山田花子');
 eq('Z2 san ate', one('〒000-0012\n東京都千代田区見本1-2\n山田花子さん宛てでお願いします').name, '山田花子');
 eq('Z card1 still clean', [has(one(AS.SAMPLE_ONE), /どの欄にも入れていない/), one(AS.SAMPLE_ONE).checks.map(c => c.f)], [false, ['name', 'city']]);
+
+
+// レビュー⑥の指摘（2026-10-26）
+const conf = (r, re) => has(r, re);   // 確認の文に出る（折りたたみではない）
+const a1 = one('名前：山田花子\n〒000-0012\n東京都千代田区見本1-2\nシティ見本でお願いします');
+eq('A1 city mihon confirm', [conf(a1, /シティ見本/), (a1.skimmed || []).length], [true, 0]);
+const a1b = one('名前：山田花子\n〒000-0012\n東京都千代田区\n見本台でお願いします');
+eq('A1 town confirm', [conf(a1b, /見本台/), conf(a1b, /町名の欄に全部入れています/)], [true, false]);
+eq('A1 honor after', conf(one('〒000-0012\n東京都千代田区見本1-2\nシティ見本でお願いします\n山田花子様'), /シティ見本/), true);
+eq('A1 pre yoroshiku', conf(one('アルカ見本 よろしくお願いします\n〒000-0012\n東京都千代田区見本1-2\n山田花子様'), /アルカ見本/), true);
+eq('A1 touwa', conf(one('〒000-0012\n東京都千代田区見本1-2\n藤和見本でお願いします\n山田花子様'), /藤和見本/), true);
+const a2 = one('1234567の件です\n東京都千代田区見本1-2 000-0012\n山田花子様');
+eq('A2 zip near addr', [a2.zip, conf(a2, /7桁の数字が2つ以上/)], ['000-0012', true]);
+const a2b = one('ご注文番号\n1234567\n郵便番号：000-0012\n東京都千代田区見本1-2\n山田花子様');
+eq('A2 label wins', [a2b.zip, conf(a2b, /7桁の数字が2つ以上/)], ['000-0012', true]);
+const a2c = one('東京都千代田区見本1-2 山田花子様 1234567 〒000-0012');
+eq('A2 7digit in bld', [a2c.zip, conf(a2c, /7桁/)], ['000-0012', true]);
+const b1 = AS.parse('〒000-0012\n東京都千代田区見本1-2\n\nサンプルハイツ203号室\n山田花子様');
+eq('B1 dropped all lines', b1.droppedHeads[0], 'サンプルハイツ203号室 / 山田花子様');
+eq('B2 dest not skimmed', conf(one('山田です。よろしくお願いします\n〒000-0012\n東京都千代田区見本1-2\n佐藤様方\n届け先は田中です'), /田中/), true);
+const b4 = one('作家様\nこんにちは😊\n購入させていただきました！\n〒000-0012 東京都千代田区見本1-2-3 グリーンコート101\n山田花子 宛\nお届け楽しみにしてます🌸');
+eq('B4 noisy dm', [b4.name, conf(b4, /作家様|購入させて|楽しみ/)], ['山田花子', false]);
+eq('B4 emoji not name', one('ありがとうございます🙇‍♀️✨\n〒000-0012\n東京都千代田区見本1-2\n山田花子').name, '山田花子');
+eq('C1 de', one('〒000-0012\n東京都千代田区見本1-2\n山田花子でお願いします').name, '山田花子');
+eq('C1 atede', one('〒000-0012\n東京都千代田区見本1-2\n鈴木一郎宛てでお願いします').name, '鈴木一郎');
+eq('C2 empty paren', one('東京都千代田区見本1-2(000-0012)\n山田花子様').building, '');
 
 // S14 iOSの判定（実在のUA）
 const UA = {

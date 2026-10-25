@@ -75,7 +75,7 @@ var AS = (function () {
     blocks.forEach(function (b) {
       var ls = b.split('\n');
       if (ls.some(function (l) { return newAddrAt(l) >= 0; }) || /(?:^|〒)\s*\d{3}-?\d{4}(?![\d-])/m.test(maskTel(b)) || ls.some(muniStart)) out.push(b);
-      else if (blocks.length > 1) dropped.push(b.split('\n')[0].slice(0, 40));
+      else if (blocks.length > 1) dropped.push(b.split('\n').map(function (x) { return x.trim(); }).filter(Boolean).join(' / ').slice(0, 200));
     });
     return { blocks: out.slice(0, MAX_ROWS), over: Math.max(0, out.length - MAX_ROWS), dropped: dropped };
   }
@@ -154,7 +154,7 @@ var AS = (function () {
     });
     if (!best) {
       r.town = rest.trim();
-      checks.push({ f: 'banchi', msg: '番地が見つかりませんでした。町名の欄に全部入れています' });
+      checks.push({ f: 'banchi', msg: r.town ? '番地が見つかりませんでした。町名の欄に全部入れています' : '町名・番地が見つかりませんでした' });
       return r;
     }
     var m = best.m, room = '';
@@ -217,14 +217,34 @@ var AS = (function () {
   // 「読み飛ばした行」に回す行か: 挨拶・メモの言葉を含み、それを除いた残りが短く、建物名・宛先らしさがない行
   // （残りが長い・カタカナ4字以上の並び・「〇〇に届けて」の〇〇・建物や宛先の語・数字があれば「確認してください」へ）
   var MEMO_G = new RegExp(MEMO_WORD.source, 'g');
-  function skimLine(c) {
-    if (!(GREET.test(c) || MEMO_WORD.test(c))) return false;
+  // 注文やお届けについての話（「ピアスの件」「購入させていただきました」「届くのが楽しみ」）
+  var ORDER_TALK = /(件|購入|注文|届く|届き|楽しみ|発送|入金|振込|振り込)/;
+  var ORDER_G = new RegExp(ORDER_TALK.source, 'g');
+  // 読み飛ばしの判定に使うメモの言葉（「よろしく」は挨拶として扱うので入れない）
+  var MEMO_SKIM = /(希望(?![がケヶ]丘)|指定|までに|\d+\s*(点|個|枚|箱)|\d+\s*円|\d+月|\d+日|\d+時|嬉し|不在|置き配)/;
+  var MEMO_SKIM_G = new RegExp(MEMO_SKIM.source, 'g');
+  // お届け先を示す語（この語がある行は読み飛ばさない）
+  var DEST_WORD = /(届け先|送り先|宛先|あて先|受取|受け取り|お届け先|配送先)/;
+  // where: 'pre'（住所の行より前）・'cont'（住所のすぐ後ろ。名前の行より前）・'post'（それより後ろ）
+  function skimLine(c, where) {
+    // 「住所：」「電話：」のような見出しだけの文字
+    if (LABEL_ONLY.test(c.replace(/\s/g, ''))) return true;
+    if (where === 'cont') return false;
+    if (DEST_WORD.test(c)) return false;
+    // お店宛ての「作家様」「みほん工房様」だけの行
+    if (/^[^\s]{1,10}(様|さま)[!！、,。]?$/.test(c) && NOT_NAME_TAIL.test(c.replace(/(様|さま)[!！、,。]?$/, ''))) return true;
+    if (!(GREET.test(c) || MEMO_WORD.test(c) || ORDER_TALK.test(c))) return false;
     if (BUILD_WORD.test(c) || ORG_WORD.test(c)) return false;
-    var d = /([^\s、。,!！]+?)(に|へ|まで|宛て?で?)(届け|送|お願い)/.exec(c);
+    var d = /([^\s、。,!！]+?)(に|へ|まで|で|宛て?で?)(届け|送|お願い)/.exec(c);
     if (d && !/^(こちら|ここ|以下|下記|そちら|この住所|上記|上|下)$/.test(d[1])) return false;
-    var r = stripGreet(c).replace(MEMO_G, '').replace(/[\s!！?？。、,，.・…]/g, '');
+    // 挨拶・メモ・注文の話の言葉と、助詞などを除いた残り
+    var r = stripGreet(c).replace(MEMO_SKIM_G, '').replace(ORDER_G, '')
+      .replace(/させていただき|させて|いただき|ました|ます|です|してます|して|[のをがはにでもへとや]/g, '')
+      .replace(/[^぀-ヿ一-鿿A-Za-z0-9]/g, '');
     if (/\d/.test(r) || /[ァ-ヶー]{4,}/.test(r)) return false;
-    return chars(r) <= 6;
+    // 残してよい字数: 注文の話（「ピアスの件」）は8字まで・メモ（置き配・不在など）は4字まで・挨拶だけの行は1字まで
+    var lim = ORDER_TALK.test(c) ? 8 : MEMO_SKIM.test(c) ? 4 : 1;
+    return chars(r) <= lim;
   }
   // 挨拶の言い回しを取り除いた残り（名前の候補を探す用）
   function stripGreet(L) { return String(L).replace(GREET_PHRASE, ' ').replace(/^[\s!！?？。、,，.・…]+|[\s!！?？。、,，.・…]+$/g, '').replace(/\s+/g, ' ').trim(); }
@@ -238,7 +258,9 @@ var AS = (function () {
       c = c.replace(/^(私は|わたしは)/, '').replace(/(です|と申します|まで|宛てでお願いします)[。!！]*$/, '').replace(/(さん|さま|様)(宛て?(で)?)?$/, '').replace(/[(（][^)）]*[)）]$/, '').trim();
       if (!c || /\d|〒|#|@/.test(c) || PREF_RE.test(c) || GREET.test(c) || LABEL_ONLY.test(c) || /[、。!！?？]/.test(c) || BUILD_WORD.test(c) || ADDR_TAIL.test(c) || ORG_WORD.test(c) || NOT_NAME_TAIL.test(c.replace(/(様|さま)$/, ''))) return;
       var n = chars(c.replace(/ /g, ''));
-      if (n >= 2 && n <= 10) cands.push({ c: c, k: k });
+      c = c.replace(/(宛て?で?|で)$/, '').trim();
+      n = chars(c.replace(/ /g, ''));
+      if (n >= 2 && n <= 10 && /[ぁ-んァ-ヶ一-龯A-Za-z]/.test(c)) cands.push({ c: c, k: k });
     });
     cands.sort(function (a, b) { return chars(a.c) - chars(b.c); });
     return cands;
@@ -355,9 +377,27 @@ var AS = (function () {
     var tel = findTel(block);
     if (tel) p.tel = tel;
     var masked = maskTel(block);
-    var zm = /〒\s*(\d{3})-?(\d{4})(?![\d-])/.exec(masked) || /^\s*(\d{3})-?(\d{4})(?![\d-])/m.exec(masked) || /(?:郵便番号)\s*[:：は]?\s*(\d{3})-?(\d{4})(?![\d-])/.exec(masked);
+    // 「注文番号」「伝票番号」などの番号が書かれた行の数字は、郵便番号の候補にしない
+    var zmasked = masked.split('\n').map(function (l) { return /(番号|No\.|ID)/i.test(l) && !/郵便番号/.test(l) ? l.replace(/\d/g, 'X') : l; }).join('\n');
+    var zm = /(?:〒|郵便番号\s*[:：は]?)\s*(\d{3})-?(\d{4})(?![\d-])/.exec(zmasked);
     var zipLoose = false;
-    if (!zm) { zm = ZIP_RE.exec(masked); zipLoose = !!zm; }
+    if (!zm) {
+      // 都道府県の行とその前後の行にある7桁を先に見る（行頭の注文番号より住所のそばの番号を選ぶ）
+      var mls = zmasked.split('\n'), pl = -1;
+      for (var q0 = 0; q0 < mls.length; q0++) { if (newAddrAt(mls[q0]) >= 0) { pl = q0; break; } }
+      if (pl >= 0) {
+        for (var dq = 0; dq <= 1 && !zm; dq++) {
+          [pl, pl - 1, pl + 1].forEach(function (ix) {
+            if (zm || ix < 0 || ix >= mls.length || (dq === 0) !== (ix === pl)) return;
+            var mm = /(?<![\d-])(\d{3})-?(\d{4})(?![\d-])/.exec(mls[ix]);
+            if (mm) { zm = mm; zm[0] = mm[0]; }
+          });
+        }
+      }
+      if (!zm) zm = /^\s*(\d{3})-?(\d{4})(?![\d-])/m.exec(zmasked);
+      if (!zm) { zm = ZIP_RE.exec(zmasked); zipLoose = !!zm; }
+    }
+    var zipCands = (masked.match(/(?<![\d-])\d{3}-?\d{4}(?![\d-])/g) || []).filter(function (v, i, a) { return a.indexOf(v) === i; });
     var zipText = zm ? zm[0].trim() : '';
     var lines = masked.split('\n').map(function (l) { return l.trim(); });
     // 郵便番号として数えるのは、行頭か「〒」の後ろの7桁だけ（建物名の中の数字を数えない）
@@ -365,6 +405,7 @@ var AS = (function () {
     var nPref = lines.filter(function (l) { return newAddrAt(l) >= 0; }).length;
     if (zm) p.zip = zm[1] + '-' + zm[2];
     else checks.push({ f: 'zip', msg: '郵便番号が見つかりませんでした' });
+    if (zm && zipCands.length > 1) checks.push({ f: 'zip', msg: '7桁の数字が2つ以上ありました（「' + zipCands.join('」「') + '」）。郵便番号に「' + zm[1] + '-' + zm[2] + '」を入れています。違っていれば直してください' });
     if (zipLoose) checks.push({ f: 'zip', msg: '「〒」も行頭もない7桁の数字「' + zipText + '」を郵便番号にしました。郵便番号でなければ直してください' });
     if (nZip > 1 || nPref > 1) checks.push({ f: 'zip', msg: '郵便番号か都道府県が2回以上出てきました。最初の1人分だけを入れています。2人分なら空行で区切ってください' });
     // 住所の行: 都道府県名が出る最初の行。なければ市区町村から始まる行
@@ -394,10 +435,10 @@ var AS = (function () {
 
     var skipped = [], skimmed = [];
     p.skimmed = skimmed;
-    function note(L) {
+    function note(L, where) {
       var c = cleanLine(L, zipText);
       if (!c) return;
-      if (greetingOnly(c) || skimLine(c)) skimmed.push(c);
+      if (greetingOnly(c) || skimLine(c, where || 'post')) skimmed.push(c);
       else skipped.push(c);
     }
     if (addrLine < 0) {
@@ -407,8 +448,10 @@ var AS = (function () {
       return finish(p);
     }
     // 住所の行より前の行と、同じ行で都道府県より前の字
-    for (var b = 0; b < addrLine; b++) note(lines[b]);
-    note(lines[addrLine].slice(0, start));
+    for (var b = 0; b < addrLine; b++) note(lines[b], 'pre');
+    note(lines[addrLine].slice(0, start), 'pre');
+    // 住所のすぐ後ろ: 名前の行が住所より後ろにあれば、その手前まで。なければ、つないだ行のすぐ次の1行
+    var nameAfter = nm.line > addrLine, contLeft = nameAfter ? Infinity : 1;
     // 住所の文字列: 都道府県から。後ろの行は3行まで、住所の続きらしい行だけをつなぐ
     // 名前の行は、名前を抜いた残りを同じように見る（その行のあとはつながない）
     var segs = [cleanLine(lines[addrLine].slice(start), zipText).replace(POLITE_TAIL, '')], joined = [], joining = true;
@@ -422,7 +465,10 @@ var AS = (function () {
         if (c) { segs.push(c); joined.push(c); if (isNameLine) joining = false; continue; }
       }
       joining = false;
-      note(Lk);
+      var inCont = (nameAfter ? k < nm.line : contLeft > 0);
+      if (!nameAfter && contLeft > 0) contLeft--;
+      note(Lk, inCont && !isNameLine ? 'cont' : (isNameLine ? 'cont' : 'post'));
+      if (isNameLine) nameAfter = false;
     }
     if (joined.length) checks.push({ f: 'building', msg: '次の行を住所の続きとしてつなぎました: 「' + joined.join('」「') + '」' });
     if (skipped.length) checks.push({ f: 'building', msg: 'どの欄にも入れていない文字があります: 「' + skipped.slice(0, 10).join('」「') + '」' + (skipped.length > 10 ? ' ほか' + (skipped.length - 10) + '行' : '') + '。住所や名前の一部なら直してください' });
@@ -450,6 +496,8 @@ var AS = (function () {
     p.city = mu.name;
     var rs = splitRest(addr.slice(mu.name.length).trim(), checks);
     p.town = rs.town; p.chome = rs.chome; p.banchi = rs.banchi; p.go = rs.go; p.building = rs.building; p.numText = rs.numText;
+    p.building = p.building.replace(/[(（]\s*[)）]/g, '').replace(/\s+/g, ' ').trim();
+    if (/(?<![\d-])\d{3}-?\d{4}(?![\d-])/.test(p.building)) checks.push({ f: 'building', msg: '建物の欄に7桁の数字「' + /(?<![\d-])\d{3}-?\d{4}(?![\d-])/.exec(p.building)[0] + '」が入っています。郵便番号や注文番号なら直してください' });
     // 建物の欄にメモらしい言葉が入っていないか
     if (MEMO_WORD.test(p.building.replace(/\d+\s*(号室|階|F)/g, '')) || /(です|ます)$/.test(p.building)) {
       checks.push({ f: 'building', msg: '建物の欄に「' + p.building + '」が入っています。メモの言葉なら消してください' });
