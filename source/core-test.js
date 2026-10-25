@@ -15,6 +15,9 @@ const one = t => AS.parse(t).rows[0];
 const parts = r => r && [r.zip, r.name, r.pref, r.city, r.town, r.chome, r.banchi, r.go, r.building];
 const fv = (r, c) => Object.fromEntries(AS.fields(r, c).map(f => [f.key, f.value]));
 const errs = (r, c) => { const f = AS.fields(r, c); return f.map(x => [x.key, AS.judge(x, f).err]).filter(x => x[1]); };
+const has = (r, re) => r.checks.some(c => re.test(c.msg));
+// 画面に出るか（確認の文か、読み飛ばした行のどちらか）
+const shown = (r, re) => has(r, re) || (r.skimmed || []).some(x => re.test(x));
 
 eq('muni count', AS.MUNI_COUNT > 1900, true);
 eq('prefs', AS.PREFS.length, 47);
@@ -214,7 +217,7 @@ eq('Q3 fuzai', memo('日中は不在がちです').building, 'みほんハイツ
 eq('Q3 insta', memo('インスタ @hanako_mihon').building, 'みほんハイツ101');
 eq('Q3 mail', memo('hanako@example.com').building, 'みほんハイツ101');
 eq('Q3 item', memo('ピアス 1点').building, 'みほんハイツ101');
-eq('Q3 item check', memo('ピアス 1点').checks.some(c => /どの欄にも入れていない/.test(c.msg)), true);
+eq('Q3 item check', shown(memo('ピアス 1点'), /ピアス/), true);
 eq('Q3 okihai', memo('置き配希望').building, 'みほんハイツ101');
 eq('Q3 spaced tel', one('〒000-0012\n東京都千代田区見本1-2\n携帯 090 0000 1234\n山田様').building, '');
 eq('Q3 joined check', one('〒000-0012\n東京都架空区見本町3丁目\n12-5\n山田 花子様').checks.some(c => /続きとしてつなぎました/.test(c.msg)), true);
@@ -231,7 +234,6 @@ eq('Q11 7digit no dup warn', one('〒000-0012 東京都千代田区見本1-2 み
 
 
 // レビュー③の指摘（2026-10-26）
-const has = (r, re) => r.checks.some(c => re.test(c.msg));
 const t1 = one('みほん工房様\nこんにちは！\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n山田花子です');
 eq('T1 shop sama', [t1.name, has(t1, /名前/)], ['山田花子', true]);
 eq('T1 sakka', one('作家様、こんにちは\n〒000-0012\n東京都千代田区見本1-2\n山田花子です').name, '山田花子');
@@ -252,7 +254,7 @@ const t2d = one('東京都千代田区見本1-2\nパークサイド見本\n101�
 eq('T2 both reported', has(t2d, /ルミエール|パークサイド見本/) && has(t2d, /101号室/), true);
 eq('T2 three lines', one('東京都千代田区\n見本町\n1-2-3\nみほんハイツ\n山田花子様').building, 'みほんハイツ');
 const mAbove = t => one('山田花子です\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n' + t);
-eq('M1 item above', [mAbove('ピアス 1点お願いします').building, has(mAbove('ピアス 1点お願いします'), /どの欄にも入れていない/)], ['みほんハイツ101', true]);
+eq('M1 item above', [mAbove('ピアス 1点お願いします').building, shown(mAbove('ピアス 1点お願いします'), /ピアス/)], ['みほんハイツ101', true]);
 eq('M1 date', mAbove('11月3日までに届くと嬉しいです').building, 'みほんハイツ101');
 eq('M1 time', mAbove('時間指定 14-16時希望').building, 'みほんハイツ101');
 eq('M2 same line yoroshiku', one('〒000-0012\n東京都千代田区見本1-2 みほんハイツ101 よろしくお願いします\n山田花子').building, 'みほんハイツ101');
@@ -305,6 +307,35 @@ eq('V5 label name only', one('名前：山田花子 サンプルハイツ203\n�
 const v6 = one('〒000-0012\n東京都中央区銀座1-2-3\n北海道ビル4F\n山田様');
 eq('V6 pref in bld', [v6.building, has(v6, /2回以上/)], ['北海道ビル4F', false]);
 eq('W1 ate ni', has(one('〒000-0012\n東京都千代田区見本1-2\nスカイ壱番館 宛にお願いします\n山田花子'), /スカイ壱番館/), true);
+
+
+// レビュー⑤の指摘（2026-10-26）
+const x1 = one('ご注文番号 1234567\n〒000-0012\n東京都千代田区見本1-2\n山田花子様');
+eq('X1 order no before zip', [x1.zip, shown(x1, /1234567/)], ['000-0012', true]);
+const x1b = one('注文番号：1234567です\n東京都千代田区見本1-2\n山田花子様');
+eq('X1 loose zip check', [x1b.zip, has(x1b, /「〒」も行頭もない7桁/)], ['123-4567', true]);
+const x2 = t => one('〒000-0012\n東京都千代田区見本1-2\n' + t);
+eq('X2 greet+name', x2('よろしくお願いします。山田花子').name, '山田花子');
+eq('X2 todokesaki label', one('お届け先：山田花子様\n〒000-0012\n東京都千代田区見本1-2').name, '山田花子');
+eq('X2 osewa shown', shown(x2('お世話になっております、みほん商事の山田です\n佐藤花子様'), /みほん商事/), true);
+eq('X2 fuzai shown', shown(x2('日中不在のため宅配ボックスに入れてください\n佐藤花子様'), /宅配ボックス/), true);
+eq('X2 haha shown', shown(x2('届け先は母の家です\n佐藤花子様'), /母の家/), true);
+eq('X2 kenmei shown', shown(x2('件名：ピアス\n佐藤花子様'), /ピアス/), true);
+eq('X2 tel label name', x2('電話 090-0000-1234 山田花子').name, '山田花子');
+eq('X2 tel ha name', x2('電話は090-0000-1234です 山田').name, '山田');
+eq('X3 okurisaki', one('送り先: 山田花子様\n〒000-0012\n東京都千代田区見本1-2').name, '山田花子');
+eq('X3 atesaki', one('〒000-0012\n東京都千代田区見本1-2\n宛先 山田花子様').name, '山田花子');
+const yy1 = AS.parse('先日は大阪府のイベントでありがとうございました！\n\n〒000-0012\n東京都千代田区見本1-2\n山田花子様');
+eq('Y1 greeting block not a row', [yy1.rows.length, yy1.dropped], [1, 1]);
+const yy2 = AS.parse('〒000-0012\n東京都千代田区見本1-2\n\n山田花子');
+eq('Y2 dropped head shown', [yy2.dropped, yy2.droppedHeads[0]], [1, '山田花子']);
+const yy3 = one('郵便番号：000-0012\n住所：東京都千代田区見本1-2\n名前：山田花子\n電話：090-0000-1234');
+eq('Y3 clean form', [yy3.zip, yy3.name, yy3.tel, has(yy3, /どの欄にも入れていない/)], ['000-0012', '山田花子', '090-0000-1234', false]);
+eq('Y3 zip ha desu', has(one('郵便番号は000-0012です\n東京都千代田区見本1-2\n山田花子様'), /どの欄にも入れていない/), false);
+eq('Y4 name+tel', one('〒000-0012\n東京都千代田区見本1-2\n山田花子 090-0000-1234').name, '山田花子');
+eq('Z1 paren yomi', one('〒000-0012\n東京都千代田区見本1-2\n山田花子(やまだはなこ)様').name, '山田花子');
+eq('Z2 san ate', one('〒000-0012\n東京都千代田区見本1-2\n山田花子さん宛てでお願いします').name, '山田花子');
+eq('Z card1 still clean', [has(one(AS.SAMPLE_ONE), /どの欄にも入れていない/), one(AS.SAMPLE_ONE).checks.map(c => c.f)], [false, ['name', 'city']]);
 
 // S14 iOSの判定（実在のUA）
 const UA = {

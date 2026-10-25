@@ -75,6 +75,9 @@
   .checks { background: var(--check-soft); border: 1px solid var(--check); border-radius: 6px; padding: 8px 12px 8px 28px; margin: 4px 0 10px; font-size: 14px; color: var(--ink); }
   .checks b { color: var(--check); }
   .checks li { margin: 2px 0; overflow-wrap: anywhere; }
+  details.skim { margin: 0 0 10px; font-size: 14px; color: var(--ink2); }
+  details.skim > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+  details.skim li { overflow-wrap: anywhere; }
   .empty { color: var(--ink3); font-size: 15px; }
   .msg { margin: 8px 0 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
   .msg.err { color: var(--err); }
@@ -217,7 +220,7 @@
 
   var carrier = sGet(KEY_C);
   if (['clickpost', 'yupack', 'yamato'].indexOf(carrier) < 0) carrier = 'clickpost';
-  var rows = [], over = 0, truncated = false, dropped = 0, failed = false;
+  var rows = [], over = 0, truncated = false, dropped = 0, droppedHeads = [], failed = false;
 
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function fmtN(n) { return (Math.round(n * 10) / 10).toString(); }
@@ -265,6 +268,15 @@
     if (!AS.cpIntact(r)) {
       var w = el('ul', 'checks'); w.appendChild(el('li', null, '貼った住所の字の一部が、どの欄にも入っていない可能性があります。元の文と見比べてください'));
       box.appendChild(w);
+    }
+    // 読み飛ばした行（挨拶・メモの言葉を含む行）も、捨てずに見えるところに出す
+    if (r.skimmed && r.skimmed.length) {
+      var sk = el('details', 'skim');
+      sk.appendChild(el('summary', null, '読み飛ばした行（挨拶やメモ） ' + r.skimmed.length + '行'));
+      var sl = el('ul');
+      r.skimmed.forEach(function (t) { sl.appendChild(el('li', null, t)); });
+      sk.appendChild(sl);
+      box.appendChild(sk);
     }
     var f = fieldsOf(r);
     f.forEach(function (x) {
@@ -363,7 +375,7 @@
     if (!rows.length) { res.appendChild(el('p', 'empty', '郵便番号か、都道府県から始まる住所が見つかりませんでした。都道府県から書いた住所を貼ってください。')); return; }
     if (over) res.appendChild(el('p', 'msg err', '41人目以降（' + over + '人分）は表示していません。1回40人までです。'));
     if (truncated) res.appendChild(el('p', 'msg err', '5,000字を超えた分は読んでいません。'));
-    if (dropped) res.appendChild(el('p', 'msg err', '空行で区切った中に、郵便番号も都道府県も見つからなかった塊が' + dropped + 'つあります。その分は表に入れていません。'));
+    if (dropped) res.appendChild(el('p', 'msg err', '空行で区切った中に、郵便番号も都道府県も見つからなかった塊が' + dropped + 'つあります。その分は表に入れていません: 「' + droppedHeads.join('」「') + '」'));
     if (rows.length === 1) {
       res.classList.add('single');
       res.appendChild(buildCard(rows[0], 0));
@@ -392,7 +404,7 @@
     }
     failed = false;
     rows = p.rows.map(function (r) { r.ov = { clickpost: {}, yupack: {}, yamato: {} }; r.edited = false; return r; });
-    over = p.over; truncated = p.truncated; dropped = p.dropped || 0;
+    over = p.over; truncated = p.truncated; dropped = p.dropped || 0; droppedHeads = p.droppedHeads || [];
     hideCsvMsg();
     render();
   }
