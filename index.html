@@ -76,7 +76,10 @@
   .checks b { color: var(--check); }
   .checks li { margin: 2px 0; overflow-wrap: anywhere; }
   details.skim { margin: 0 0 10px; font-size: 14px; color: var(--ink2); }
-  details.skim > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+  details.skim > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; list-style: none; }
+  details.skim > summary::-webkit-details-marker { display: none; }
+  details.skim > summary::before { content: "▶"; font-size: 12px; color: var(--ink3); margin-right: 6px; }
+  details.skim[open] > summary::before { content: "▼"; }
   details.skim li { overflow-wrap: anywhere; }
   .empty { color: var(--ink3); font-size: 15px; }
   .msg { margin: 8px 0 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
