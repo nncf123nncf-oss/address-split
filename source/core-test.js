@@ -214,7 +214,7 @@ eq('Q3 fuzai', memo('日中は不在がちです').building, 'みほんハイツ
 eq('Q3 insta', memo('インスタ @hanako_mihon').building, 'みほんハイツ101');
 eq('Q3 mail', memo('hanako@example.com').building, 'みほんハイツ101');
 eq('Q3 item', memo('ピアス 1点').building, 'みほんハイツ101');
-eq('Q3 item check', memo('ピアス 1点').checks.some(c => /数字の入った行/.test(c.msg)), true);
+eq('Q3 item check', memo('ピアス 1点').checks.some(c => /住所に入れていません/.test(c.msg)), true);
 eq('Q3 okihai', memo('置き配希望').building, 'みほんハイツ101');
 eq('Q3 spaced tel', one('〒000-0012\n東京都千代田区見本1-2\n携帯 090 0000 1234\n山田様').building, '');
 eq('Q3 joined check', one('〒000-0012\n東京都架空区見本町3丁目\n12-5\n山田 花子様').checks.some(c => /続きとしてつなぎました/.test(c.msg)), true);
@@ -228,6 +228,47 @@ const r10 = one('〒000-0012 東京都千代田区' + 'み'.repeat(19) + '12-5 �
 eq('Q10 no hyphen split', AS.cpLines(r10).every(l => !/^-/.test(l)), true);
 eq('Q10 intact', AS.cpIntact(r10), true);
 eq('Q11 7digit no dup warn', one('〒000-0012 東京都千代田区見本1-2 みほんビル1234567 山田様').checks.some(c => /2回以上/.test(c.msg)), false);
+
+
+// レビュー③の指摘（2026-10-26）
+const has = (r, re) => r.checks.some(c => re.test(c.msg));
+const t1 = one('みほん工房様\nこんにちは！\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n山田花子です');
+eq('T1 shop sama', [t1.name, has(t1, /名前/)], ['山田花子', true]);
+eq('T1 sakka', one('作家様、こんにちは\n〒000-0012\n東京都千代田区見本1-2\n山田花子です').name, '山田花子');
+eq('T1 tantou', one('ご担当者様\n〒000-0012\n東京都千代田区見本1-2\n山田花子').name, '山田花子');
+eq('T1 okage', one('おかげさまで無事届きました\n〒000-0012\n東京都千代田区見本1-2\n山田花子').name, '山田花子');
+eq('T1 otagai', one('お互い様です\n〒000-0012\n東京都千代田区見本1-2\n山田花子').name, '山田花子');
+const t1b = one('〒000-0012\n東京都千代田区見本1-2\n山田花子\nご馳走様でした');
+eq('T1 gochisou', t1b.name, '山田花子');
+const t1c = one('〒000-0012\n東京都千代田区見本1-2\n山田花子\nみほん屋様、よろしくお願いします');
+eq('T1 other cand check', has(t1c, /名前/), true);
+eq('T1 mina name', one('〒000-0012 東京都千代田区見本1-2 山田 みな様').name, '山田 みな');
+const t2 = r => [r.building, has(r, /住所に入れていません|つなぎました/)];
+eq('T2 samakata', t2(one('東京都千代田区見本1-2\n佐藤様方\n山田花子様')), ['佐藤様方', true]);
+eq('T2 company', t2(one('東京都千代田区見本1-2\n株式会社みほん 総務部\n山田花子様')), ['株式会社みほん 総務部', true]);
+const t2c = one('東京都千代田区見本1-2\nルミエール見本\n山田花子様');
+eq('T2 nodigit bld reported', has(t2c, /住所に入れていません: 「ルミエール見本」/), true);
+const t2d = one('東京都千代田区見本1-2\nパークサイド見本\n101号室\n山田花子様');
+eq('T2 both reported', has(t2d, /ルミエール|パークサイド見本/) && has(t2d, /101号室/), true);
+eq('T2 three lines', one('東京都千代田区\n見本町\n1-2-3\nみほんハイツ\n山田花子様').building, 'みほんハイツ');
+const mAbove = t => one('山田花子です\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n' + t);
+eq('M1 item above', [mAbove('ピアス 1点お願いします').building, has(mAbove('ピアス 1点お願いします'), /住所に入れていません/)], ['みほんハイツ101', true]);
+eq('M1 date', mAbove('11月3日までに届くと嬉しいです').building, 'みほんハイツ101');
+eq('M1 time', mAbove('時間指定 14-16時希望').building, 'みほんハイツ101');
+eq('M2 same line yoroshiku', one('〒000-0012\n東京都千代田区見本1-2 みほんハイツ101 よろしくお願いします\n山田花子').building, 'みほんハイツ101');
+eq('M2 desu', one('住所は東京都千代田区見本1-2 みほんハイツ101です').building, 'みほんハイツ101');
+eq('M2 desu only', one('〒000-0012\n東京都千代田区見本1-2です\n山田花子様').building, '');
+const m2m = one('〒000-0012 東京都千代田区見本1-2 みほんハイツ101 不在時は置き配で\n山田花子');
+eq('M2 memo check', has(m2m, /メモの言葉/), true);
+eq('M3 ninarimasu', one('〒000-0012\n東京都千代田区見本1-2\nみほんハイツ101号室になります\n山田花子様').building, 'みほんハイツ101号室');
+eq('M3 nionegai', one('〒000-0012\n東京都千代田区見本1-2\nみほんハイツ101にお願いします\n山田花子様').building, 'みほんハイツ101');
+eq('M3 moji', one('〒000-0012\n東京都千代田区見本1-2\n文字化けしてたらすみません\n山田花子様').building, '');
+const m4 = one('東京都千代田区見本町3丁目です\n12-5です\n山田花子様');
+eq('M4 desu banchi', [m4.chome, m4.banchi, m4.go, m4.building], ['3', '12', '5', '']);
+const m5 = one('東京都千代田区見本1-2\n〒000-0012\n3階\n山田花子様');
+eq('M5 no contradiction', [m5.building, has(m5, /住所に入れていません/)], ['3階', false]);
+eq('L2 3F', one('〒000-0012\n東京都千代田区見本1-2\n3F\n山田様').building, '3F');
+eq('L2 A-101', one('〒000-0012\n東京都千代田区見本1-2 みほんハイツ\nA-101\n山田様').building, 'みほんハイツ A-101');
 
 // S14 iOSの判定（実在のUA）
 const UA = {
