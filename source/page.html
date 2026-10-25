@@ -39,6 +39,7 @@
   textarea, input[type=text], select { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface);
     border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 10px; min-height: 44px; }
   textarea { min-height: 200px; resize: vertical; line-height: 1.6; }
+  #src { min-height: 260px; }
   textarea:focus, input:focus, select:focus, button:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   button { font: inherit; font-size: 15px; min-height: 44px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line-strong);
     background: var(--surface); color: var(--ink); cursor: pointer; }
@@ -229,8 +230,9 @@
   }
   // 部品に戻す（他の送り方にも反映される欄）
   function applyPart(r, f, v) {
-    r.edited = true;
     var part = f.part;
+    var addrPart = /^(pref|city|town|chome|banchi|go|building)$/.test(part);
+    if (addrPart) r.edited = true;
     if (part === 'zip') { var d = AS.norm(v).replace(/[^\d]/g, ''); r.zip = d.length === 7 ? d.slice(0, 3) + '-' + d.slice(3) : AS.norm(v).trim(); }
     else if (part === 'name') { r.name = AS.norm(v).trim(); var sp = r.name.split(' '); r.sei = sp.length === 2 ? sp[0] : r.name; r.mei = sp.length === 2 ? sp[1] : ''; }
     else if (part === 'sei' || part === 'mei') { r[part] = AS.norm(v).trim(); r.name = (r.sei + (r.mei ? ' ' + r.mei : '')).trim(); }
@@ -238,6 +240,7 @@
     else { r[part] = AS.norm(v).trim(); }
     // 部品が変わったら、組み合わせの欄の上書きは捨てる
     ['clickpost', 'yupack', 'yamato'].forEach(function (c) {
+      if (!addrPart) return;
       Object.keys(r.ov[c]).forEach(function (k) { if (!/^(zip|name|honor|pref|tel|sei|mei|banchi|go|ybld|ymbld)$/.test(k)) delete r.ov[c][k]; });
     });
   }
@@ -273,7 +276,7 @@
       lb.appendChild(el('span', null, x.label));
       var n = el('span', 'n'); lb.appendChild(n);
       var inp = el('textarea', 'fi'); inp.rows = 1; inp.id = id; inp.value = x.value; inp.maxLength = 100; inp.autocomplete = 'off'; inp.spellcheck = false;
-      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) e.preventDefault(); });
       var cp = el('button', 'cp', 'コピー'); cp.type = 'button';
       cp.setAttribute('aria-label', x.label + 'をコピー');
       var er = el('div', 'er'); er.id = id + '-er';
@@ -285,7 +288,7 @@
         grow(inp);
         var cur = fieldsOf(r).filter(function (z) { return z.key === x.key; })[0] || x;
         if (cur.part) applyPart(r, cur, inp.value);
-        else { r.ov[carrier][x.key] = inp.value; r.edited = true; }
+        else { r.ov[carrier][x.key] = inp.value; if (!/^(zip|name|honor|tel|sei|mei)$/.test(x.key)) r.edited = true; }
         refresh(idx, x.key);
       });
       cp.addEventListener('click', function () { copyText(inp.value, cp); });

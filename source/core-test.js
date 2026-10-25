@@ -199,6 +199,36 @@ const lost = one('〒000-0001 東京都千代田区見本1-2 山田様');
 lost.building = ''; lost.rawAddr = '東京都千代田区見本1-2 みほんハイツ';
 eq('R1 lost chars detected', AS.cpIntact(lost), false);
 
+
+// レビュー②の指摘（2026-10-26）
+eq('Q1 otsukare', nm('お疲れ様です！\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n山田 花子様'), ['山田 花子', '様', false]);
+eq('Q1 otsukare bld', one('お疲れ様です！\n〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n山田 花子様').building, 'みほんハイツ101');
+eq('Q1 otsukaresama guess', one('お疲れさまです\n〒000-0012\n東京都千代田区見本1-2\n山田花子').name, '山田花子');
+eq('Q1 minasama', one('皆さま、いつもありがとうございます\n〒000-0012\n東京都千代田区見本1-2\n山田花子様').name, '山田花子');
+eq('Q1 near addr', one('山田様、ありがとうございます\n〒000-0012\n東京都千代田区見本1-2\n佐藤花子様').name, '佐藤花子');
+eq('Q2 masuda', one('〒000-0012\n東京都千代田区見本1-2\nコーポますだ101\n山田花子様').building, 'コーポますだ101');
+eq('Q2 desu', one('〒000-0012\n東京都千代田区見本1-2\nみほんハイツ101号室です。\n山田花子様').building, 'みほんハイツ101号室');
+eq('Q2 made', one('〒000-0012\n東京都千代田区見本1-2\nみほんハイツ101までお願いします\n山田花子様').building, 'みほんハイツ101');
+const memo = t => one('〒000-0012\n東京都千代田区見本1-2 みほんハイツ101\n山田 花子様\n' + t);
+eq('Q3 fuzai', memo('日中は不在がちです').building, 'みほんハイツ101');
+eq('Q3 insta', memo('インスタ @hanako_mihon').building, 'みほんハイツ101');
+eq('Q3 mail', memo('hanako@example.com').building, 'みほんハイツ101');
+eq('Q3 item', memo('ピアス 1点').building, 'みほんハイツ101');
+eq('Q3 item check', memo('ピアス 1点').checks.some(c => /数字の入った行/.test(c.msg)), true);
+eq('Q3 okihai', memo('置き配希望').building, 'みほんハイツ101');
+eq('Q3 spaced tel', one('〒000-0012\n東京都千代田区見本1-2\n携帯 090 0000 1234\n山田様').building, '');
+eq('Q3 joined check', one('〒000-0012\n東京都架空区見本町3丁目\n12-5\n山田 花子様').checks.some(c => /続きとしてつなぎました/.test(c.msg)), true);
+eq('Q4 yoroshiku', one('〒000-0012\n東京都千代田区見本1-2\n山田 花子\n宜しくです').name, '山田 花子');
+eq('Q4 ijou', one('〒000-0012\n東京都千代田区見本1-2\n山田 花子\n以上').name, '山田 花子');
+eq('Q4 form', one('住所\n東京都千代田区見本1-2\n電話番号\n090-0000-1234\n名前\n山田花子').name, '山田花子');
+eq('Q6 katakana bld', [one('〒000-0012 東京都千代田区見本1-2 サンシャイン 山田様').name, one('〒000-0012 東京都千代田区見本1-2 サンシャイン 山田様').building], ['山田', 'サンシャイン']);
+eq('Q7 sama ate', nm('〒000-0012 東京都千代田区見本1-2 山田花子様宛'), ['山田花子', '宛', false]);
+eq('Q8 label sama de', one('宛名は山田花子様で\n〒000-0012\n東京都千代田区見本1-2').name, '山田花子');
+const r10 = one('〒000-0012 東京都千代田区' + 'み'.repeat(19) + '12-5 山田様');
+eq('Q10 no hyphen split', AS.cpLines(r10).every(l => !/^-/.test(l)), true);
+eq('Q10 intact', AS.cpIntact(r10), true);
+eq('Q11 7digit no dup warn', one('〒000-0012 東京都千代田区見本1-2 みほんビル1234567 山田様').checks.some(c => /2回以上/.test(c.msg)), false);
+
 // S14 iOSの判定（実在のUA）
 const UA = {
   iphoneSafari: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1',
