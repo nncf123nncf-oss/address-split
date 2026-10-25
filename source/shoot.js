@@ -1,5 +1,5 @@
 // 投稿カード用の素材を撮る（Chrome headless / CDP・DPR2）。実行: node source/shoot.js <出力フォルダ>
-// 01-x-primary: 960px幅・2列・ヤマトのタブ（左に貼ったDMの文、右に分かれた欄）／02-clickpost-3: 680px幅・クリックポストのタブ・3人分とCSVボタン
+// 01-x-primary: 1060px幅・2列・ヤマトのタブ（左に貼ったDMの文、右に分かれた欄）／02-clickpost-3: 680px幅・クリックポストのタブ・3人分とCSVボタン
 // 03-yamato-560: 560px幅・ヤマトのタブの欄だけ（予備）
 const fs = require('fs'), path = require('path'), http = require('http');
 const { launch } = require('./cdp');
@@ -19,8 +19,8 @@ const many = `localStorage.clear();document.getElementById('ex3').click();docume
   const b = await launch(9472);
   await b.send('Network.enable');
   await b.send('Network.setBlockedURLs', { urls: ['*cloudflareinsights.com*'] });
-  // 01: 960px・2列。左の「届いた文を貼る」の見出し〜右の建物名の欄まで
-  await b.open(ORIGIN, 960, 2000, 2, false, 'light');
+  // 01: 1060px・2列。左の「届いた文を貼る」の見出し〜右の建物名の欄まで
+  await b.open(ORIGIN, 1060, 2000, 2, false, 'light');
   await b.ev(one); await b.sleep(500);
   const inH = await b.ev(rect('#in-h')), bld = await b.ev(rect('.fld[data-key="ymbld"]')), src = await b.ev(rect('#src'));
   await b.shot(path.join(OUT, '01-x-primary.png'), pad(union(union(inH, bld), src), 14));
