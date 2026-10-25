@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>DMで届いた住所ばらし</title>
+<meta name="description" content="DM・LINE・メールで届いた住所の文を貼ると、郵便番号・名前・住所の部品に分かれ、クリックポスト・Webゆうパックプリント・ヤマト「宅急便をスマホで送る」の欄に合わせてコピーできます。CSVにもできます。貼った文は保存も送信もしません。">
+<style>
+  :root {
+    --bg: #f2f6f7; --surface: #ffffff; --ink: #142124; --ink2: #304347; --ink3: #4a5d61;
+    --line: #d3dfe1; --line-strong: #678086; --accent: #2B6F7E; --accent-ink: #ffffff; --accent-soft: #e2eff2;
+    --err: #B5402A; --err-soft: #fbe8e3; --check: #7a5a00; --check-soft: #fbf1d3; --notice: #e8f1f3;
+    --font: "Hiragino Sans","Yu Gothic","BIZ UDPGothic","Noto Sans JP",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1517; --surface: #172023; --ink: #e7f0f2; --ink2: #c7d6d9; --ink3: #a9babe;
+      --line: #2b3a3e; --line-strong: #81979c; --accent: #8FCFDB; --accent-ink: #0d2228; --accent-soft: #1d3136;
+      --err: #F0A08F; --err-soft: #3d221c; --check: #f0cf6e; --check-soft: #3a3015; --notice: #1a272a;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.6; }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px 16px 32px; }
+  h1 { font-size: 22px; line-height: 1.3; margin: 8px 0 8px; }
+  h2 { font-size: 18px; line-height: 1.4; margin: 0 0 10px; }
+  h3 { font-size: 16px; line-height: 1.4; margin: 14px 0 6px; }
+  p { margin: 0 0 10px; }
+  .lead { color: var(--ink2); }
+  .notice { background: var(--notice); border: 1px solid var(--line-strong); border-left: 6px solid var(--accent); border-radius: 6px;
+    padding: 8px 12px 8px 28px; margin: 0 0 14px; font-size: 14px; color: var(--ink2); }
+  .notice li { margin: 2px 0; }
+  .small { font-size: 14px; color: var(--ink3); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 14px; min-width: 0; }
+  label.f { display: block; font-weight: 700; margin: 0 0 4px; }
+  textarea, input[type=text], select { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 6px; padding: 8px 10px; min-height: 44px; }
+  textarea { min-height: 200px; resize: vertical; line-height: 1.6; }
+  textarea:focus, input:focus, select:focus, button:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; font-size: 15px; min-height: 44px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: var(--surface); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+  .btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; }
+  .tabs button { min-height: 52px; padding: 6px 2px; font-size: 14px; word-break: keep-all; line-height: 1.3; font-weight: 700; border-width: 2px; }
+  .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .tabs button .sub { display: block; font-size: 12px; font-weight: 400; }
+  .cnote { font-size: 14px; color: var(--ink2); margin: 0 0 10px; }
+  .count-h { font-weight: 700; font-size: 17px; margin: 0 0 8px; }
+  .entry { border: 1px solid var(--line); border-radius: 8px; margin: 0 0 10px; background: var(--surface); }
+  .entry > summary { list-style: none; cursor: pointer; padding: 10px 12px; min-height: 44px; }
+  .entry > summary::-webkit-details-marker { display: none; }
+  .entry > summary::before { content: "▶"; font-size: 12px; color: var(--ink3); margin-right: 6px; }
+  .entry[open] > summary::before { content: "▼"; }
+  .entry .who { font-weight: 700; overflow-wrap: anywhere; }
+  .entry .prev { display: block; font-size: 14px; color: var(--ink2); overflow-wrap: anywhere; margin-top: 2px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 4px; padding: 0 6px; margin-left: 6px; vertical-align: 1px; border: 1px solid; }
+  .badge.chk { color: var(--check); background: var(--check-soft); border-color: var(--check); }
+  .badge.err { color: var(--err); background: var(--err-soft); border-color: var(--err); }
+  .card { padding: 4px 12px 12px; }
+  .single .card { padding: 0; }
+  .fld { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; align-items: end; padding: 8px 0; border-top: 1px solid var(--line); }
+  .fld:first-of-type { border-top: 0; }
+  .fld .lb { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 700; color: var(--ink2); }
+  .fld .lb .n { font-weight: 400; color: var(--ink3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .fld .lb .n.over { color: var(--err); font-weight: 700; }
+  .fld textarea.fi { min-width: 0; min-height: 44px; resize: none; overflow: hidden; line-height: 1.5; padding: 9px 10px; overflow-wrap: anywhere; }
+  .fld .cp { min-width: 88px; white-space: nowrap; }
+  .fld .er { grid-column: 1 / -1; color: var(--err); font-size: 14px; font-weight: 700; }
+  .fld.bad textarea.fi { border-color: var(--err); border-width: 2px; }
+  .checks { background: var(--check-soft); border: 1px solid var(--check); border-radius: 6px; padding: 8px 12px 8px 28px; margin: 4px 0 10px; font-size: 14px; color: var(--ink); }
+  .checks b { color: var(--check); }
+  .checks li { margin: 2px 0; overflow-wrap: anywhere; }
+  .empty { color: var(--ink3); font-size: 15px; }
+  .msg { margin: 8px 0 0; font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+  .msg.err { color: var(--err); }
+  .msg.ok { color: var(--accent); }
+  .opt { margin: 10px 0; }
+  .radios { display: flex; flex-wrap: wrap; gap: 8px; }
+  .radios label { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 6px; }
+  details.sender { border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; margin: 10px 0; }
+  details.sender > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+  .grid2 { display: grid; gap: 8px; }
+  .refs { font-size: 13px; color: var(--ink3); overflow-wrap: anywhere; }
+  .refs a { color: var(--accent); display: inline-block; padding: 12px 0; }
+  .mw-footer { box-sizing: border-box; width: 100%; max-width: 100%; margin: 24px 0 0; padding: 16px; background: #F7F7F8;
+    border: 1px solid #D8D8DC; border-radius: 6px; color: #3A3A3E; font-family: system-ui, sans-serif; font-size: 12px; line-height: 1.7; }
+  .mw-footer p { margin: 0 0 6px; } .mw-footer p:last-child { margin-bottom: 0; } .mw-footer a { color: #0B5AA6; display: inline-block; padding: 13px 0; }
+  @media (min-width: 640px) { .grid2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  @media (min-width: 880px) {
+    .layout { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 20px; align-items: start; }
+    .sticky { position: sticky; top: 16px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>DMで届いた住所ばらし</h1>
+  <p class="lead">DM・LINE・メールで届いた住所の文を、そのまま貼ってください。郵便番号・名前・住所が分かれ、選んだ送り方の入力欄と同じ並びでコピーできます。</p>
+  <ul class="notice">
+    <li>住所が正しいか（実在するか・郵便番号と合っているか）は確かめていません。使う前に目で確認してください。</li>
+    <li>貼った文・お届け先の住所は、どこにも送らず、保存もしません。</li>
+    <li>日本郵便・ヤマト運輸とは関係のない個人の道具です。各社の欄の決まりは2026年10月25日に調べたもので、変わることがあります。</li>
+  </ul>
+
+  <div class="layout">
+    <section class="panel sticky" aria-labelledby="in-h">
+      <h2 id="in-h">届いた文を貼る</h2>
+      <div class="btns" style="margin:0 0 10px">
+        <button type="button" id="ex1">見本（1人分）</button>
+        <button type="button" id="ex3">見本（3人分）</button>
+        <button type="button" id="clr">消す</button>
+      </div>
+      <label class="f" for="src">文（何人分かは、空行で区切って貼る）</label>
+      <textarea id="src" maxlength="5000" spellcheck="false" autocomplete="off" placeholder="〒000-0000&#10;東京都○○区○○町1-2-3 ○○ハイツ101&#10;山田 花子様"></textarea>
+      <p class="small"><span id="src-n">0</span>／5,000字。文を書き換えると、下で手で直した所は元に戻ります。</p>
+    </section>
+
+    <section class="panel" aria-labelledby="out-h">
+      <h2 id="out-h">送り方を選ぶ</h2>
+      <div class="tabs" role="tablist" aria-label="送り方">
+        <button type="button" role="tab" id="tab-clickpost" data-c="clickpost" aria-selected="true">クリック<br>ポスト<span class="sub">CSVあり</span></button>
+        <button type="button" role="tab" id="tab-yupack" data-c="yupack" aria-selected="false" aria-label="Webゆうパックプリント（CSVあり）">ゆうパック<br>プリント<span class="sub">CSVあり</span></button>
+        <button type="button" role="tab" id="tab-yamato" data-c="yamato" aria-selected="false">ヤマト<br>スマホで送る<span class="sub">CSVなし</span></button>
+      </div>
+      <p class="cnote" id="cnote"></p>
+      <div id="result" role="region" aria-live="polite"><p class="empty">左（スマホでは上）の欄に、届いた文を貼ってください。</p></div>
+
+      <div id="csv" hidden>
+        <h3>CSVにする</h3>
+        <div id="csv-cp">
+          <label class="f" for="naiyo">内容品（全員に共通。全角15字・半角30字まで）</label>
+          <input type="text" id="naiyo" maxlength="30" value="">
+        </div>
+        <div id="csv-yp">
+          <div class="opt">
+            <span class="f" style="font-weight:700">商品</span>
+            <div class="radios">
+              <label><input type="radio" name="ypk" value="pack" checked> ゆうパック</label>
+              <label><input type="radio" name="ypk" value="packet"> ゆうパケット</label>
+            </div>
+          </div>
+          <label class="f" for="ypitem">品名（ゆうパックは必須。全角20字まで）</label>
+          <input type="text" id="ypitem" maxlength="20" value="">
+          <details class="sender" id="sender-box">
+            <summary>ご依頼主（自分）の情報<span class="small" id="sender-st" style="margin-left:8px;font-weight:400"></span></summary>
+            <p class="small">Webゆうパックプリントの CSV には、ご依頼主の郵便番号・住所・お名前が必要です。<b>ご依頼主の情報だけ、この端末に残ります。</b>お届け先の住所は残しません。</p>
+            <label class="f" for="s-paste">自分の住所と名前を貼って分ける（任意）</label>
+            <textarea id="s-paste" style="min-height:90px" maxlength="500"></textarea>
+            <div class="btns"><button type="button" id="s-split">貼った文から入れる</button></div>
+            <div class="grid2" style="margin-top:10px">
+              <div><label class="f" for="s-name">お名前・屋号</label><input type="text" id="s-name" maxlength="25"></div>
+              <div><label class="f" for="s-zip">郵便番号</label><input type="text" id="s-zip" maxlength="8" inputmode="numeric"></div>
+              <div><label class="f" for="s-pref">都道府県</label><input type="text" id="s-pref" maxlength="5"></div>
+              <div><label class="f" for="s-city">市区町村郡（町名まで）</label><input type="text" id="s-city" maxlength="25"></div>
+              <div><label class="f" for="s-num">丁目番地号</label><input type="text" id="s-num" maxlength="25"></div>
+              <div><label class="f" for="s-bld">建物名・部屋番号など</label><input type="text" id="s-bld" maxlength="25"></div>
+              <div><label class="f" for="s-tel">電話番号</label><input type="text" id="s-tel" maxlength="13" inputmode="tel"></div>
+            </div>
+            <div class="btns" style="margin-bottom:12px"><button type="button" id="s-clear">ご依頼主の情報を消す</button></div>
+            <p class="msg" id="s-msg" hidden></p>
+          </details>
+        </div>
+        <div class="btns"><button type="button" class="primary" id="csv-go">CSVにする</button></div>
+        <p class="msg" id="csv-msg" hidden></p>
+        <div id="csv-fb" hidden>
+          <p class="small">共有の画面を開けませんでした。iPhone・iPadでは、文字コード（Shift-JIS）を選んで .csv を保存できないことがあります。<b>このページをパソコンで開いて書き出してください。</b>下の文は中身の確認用です。</p>
+          <textarea id="csv-text" readonly style="min-height:140px;font-size:14px"></textarea>
+        </div>
+      </div>
+      <p class="small" id="ymt-note" hidden>ヤマト「宅急便をスマホで送る」には、個人向けの CSV の取り込みが見当たらなかったため、CSVは作りません。1人ずつ欄をコピーしてください。</p>
+    </section>
+  </div>
+
+  <section class="panel refs" aria-labelledby="ref-h">
+    <h2 id="ref-h" style="font-size:16px">欄の決まりを調べた資料（2026年10月25日）</h2>
+    <p>クリックポスト: 住所1〜4行目は各全角20字・半角40字まで、内容品は全角15字・半角30字まで、1回40件まで（まとめ申込の説明より）。郵便番号はハイフンなしの7桁で書き出します（ハイフンの有無は未確認）。<br>
+      <a href="https://clickpost.jp/create_csv_manual_yahoo.pdf" rel="noopener">クリックポスト まとめ申込の説明（PDF）</a></p>
+    <p>Webゆうパックプリント: 出荷予定データ（標準フォーマット）の72項目。郵便番号は半角数字7桁、お名前・市区町村郡・丁目番地号・建物は各全角25字まで、都道府県と市区町村郡を合わせて25字まで。文字コードは日本郵便のページに書かれていないため、Shift-JISで書き出します。<br>
+      <a href="https://www.post.japanpost.jp/web-yu-packprint/contents/manual/Web_upload.html" rel="noopener">Webゆうパックプリント CSVアップロードご利用手順</a></p>
+    <p>ヤマト「宅急便をスマホで送る」: お名前は姓・名それぞれ全角15字まで、番地・号は各全角5字まででハイフンは使えない、建物名・部屋番号は全角30字まで。<br>
+      <a href="https://faq.kuronekoyamato.co.jp/app/answers/detail/a_id/7719/" rel="noopener">ヤマト運輸 よくある質問（入力欄の文字数制限）</a></p>
+    <p>市区町村の切れ目は、総務省「全国地方公共団体コード」（令和6年1月1日現在）の市区町村名で見ています。一覧にない名前は「確認」の印を付けます。</p>
+  </section>
+
+  <footer class="mw-footer">
+    <p>みちAIワークス（MICHI AI WORKS）／代表 田中　泉</p>
+    <p>運営: <a href="https://michi-portfolio.vercel.app/" rel="noopener">みちAIワークス 公式サイト</a>（https://michi-portfolio.vercel.app/ ）／ お問い合わせ: <a href="mailto:nncf123nncf@gmail.com">nncf123nncf@gmail.com</a></p>
+    <p>貼った文・お届け先の住所は、保存も送信もしません。選んだ送り方と、入力したご依頼主の情報だけ、お使いの端末のブラウザ（localStorage）に保存します。このページはAIにつながっていません。アクセス解析（Cloudflare Web Analytics）で、ページの閲覧状況（閲覧数・参照元・ブラウザの種類など）を計測しています。貼った文や住所は送りません。</p>
+    <p>ログイン・会員登録・パスワードの入力を求めることはありません。</p>
+  </footer>
+</main>
+
+<script id="core">
+/*CORE*/
+</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var KEY_C = 'mw-day080-carrier', KEY_S = 'mw-day080-sender';
+  var CNOTE = {
+    clickpost: 'クリックポストのまとめ申込の形で分けます。住所は1〜4行目（各全角20字・半角40字まで）に収めます。',
+    yupack: 'Webゆうパックプリント（ゆうパック・ゆうパケット）の欄に合わせて分けます。全角の欄は、数字や記号も全角にしています。',
+    yamato: 'ヤマト「宅急便をスマホで送る」の欄に合わせて分けます。番地と号は、ハイフンなしの数字だけにしています。'
+  };
+  var store = (function () {
+    try { var k = '__mw_t'; localStorage.setItem(k, '1'); localStorage.removeItem(k); return localStorage; } catch (e) { return null; }
+  })();
+  function sGet(k) { try { return store ? store.getItem(k) : null; } catch (e) { return null; } }
+  function sSet(k, v) { try { if (store) store.setItem(k, v); } catch (e) { /* 残せない端末ではその場限り */ } }
+  function sDel(k) { try { if (store) store.removeItem(k); } catch (e) { /* 同上 */ } }
+
+  var carrier = sGet(KEY_C);
+  if (['clickpost', 'yupack', 'yamato'].indexOf(carrier) < 0) carrier = 'clickpost';
+  var rows = [], over = 0, truncated = false;
+
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function fmtN(n) { return (Math.round(n * 10) / 10).toString(); }
+
+  // ---- 1人分の欄（送り方の上書きを反映） ----
+  function fieldsOf(r) {
+    var f = AS.fields(r, carrier), ov = r.ov[carrier];
+    f.forEach(function (x) { if (Object.prototype.hasOwnProperty.call(ov, x.key)) x.value = ov[x.key]; });
+    return f;
+  }
+  // 部品に戻す（他の送り方にも反映される欄）
+  function applyPart(r, f, v) {
+    r.edited = true;
+    var part = f.part;
+    if (part === 'zip') { var d = AS.norm(v).replace(/[^\d]/g, ''); r.zip = d.length === 7 ? d.slice(0, 3) + '-' + d.slice(3) : AS.norm(v).trim(); }
+    else if (part === 'name') { r.name = AS.norm(v).trim(); var sp = r.name.split(' '); r.sei = sp.length === 2 ? sp[0] : r.name; r.mei = sp.length === 2 ? sp[1] : ''; }
+    else if (part === 'sei' || part === 'mei') { r[part] = AS.norm(v).trim(); r.name = (r.sei + (r.mei ? ' ' + r.mei : '')).trim(); }
+    else if (part === 'banchi' || part === 'go') { r[part] = AS.norm(v).trim(); r.numText = ''; }
+    else { r[part] = AS.norm(v).trim(); }
+    // 部品が変わったら、組み合わせの欄の上書きは捨てる
+    ['clickpost', 'yupack', 'yamato'].forEach(function (c) {
+      Object.keys(r.ov[c]).forEach(function (k) { if (!/^(zip|name|honor|pref|tel|sei|mei|banchi|go|ybld|ymbld)$/.test(k)) delete r.ov[c][k]; });
+    });
+  }
+  function rowProblems(r) {
+    var f = fieldsOf(r), errs = [];
+    f.forEach(function (x) { var j = AS.judge(x, f); if (j.err) errs.push(x.label + '：' + j.err); });
+    return errs;
+  }
+
+  function buildCard(r, idx) {
+    var box = el('div', 'card');
+    box.dataset.idx = idx;
+    var chk = r.checks.slice();
+    if (carrier === 'yamato' && r.name && !r.mei) chk.push({ f: 'sei', msg: '名前に空白がないため、姓と名に分けられませんでした。姓の欄に全部入れています' });
+    if (chk.length) {
+      var ul = el('ul', 'checks');
+      var lead = el('li'); lead.appendChild(el('b', null, '確認してください'));
+      ul.appendChild(lead);
+      chk.forEach(function (c) { ul.appendChild(el('li', null, c.msg)); });
+      box.appendChild(ul);
+    }
+    if (!AS.cpIntact(r)) {
+      var w = el('ul', 'checks'); w.appendChild(el('li', null, '貼った住所の字の一部が、どの欄にも入っていない可能性があります。元の文と見比べてください'));
+      box.appendChild(w);
+    }
+    var f = fieldsOf(r);
+    f.forEach(function (x) {
+      var row = el('div', 'fld');
+      row.dataset.key = x.key;
+      var lb = el('label', 'lb');
+      var id = 'f' + idx + '-' + x.key;
+      lb.htmlFor = id;
+      lb.appendChild(el('span', null, x.label));
+      var n = el('span', 'n'); lb.appendChild(n);
+      var inp = el('textarea', 'fi'); inp.rows = 1; inp.id = id; inp.value = x.value; inp.maxLength = 100; inp.autocomplete = 'off'; inp.spellcheck = false;
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+      var cp = el('button', 'cp', 'コピー'); cp.type = 'button';
+      cp.setAttribute('aria-label', x.label + 'をコピー');
+      var er = el('div', 'er'); er.id = id + '-er';
+      inp.setAttribute('aria-describedby', er.id);
+      row.appendChild(lb); row.appendChild(inp); row.appendChild(cp); row.appendChild(er);
+      box.appendChild(row);
+      inp.addEventListener('input', function () {
+        if (/[\r\n]/.test(inp.value)) inp.value = inp.value.replace(/[\r\n]+/g, ' ');
+        grow(inp);
+        var cur = fieldsOf(r).filter(function (z) { return z.key === x.key; })[0] || x;
+        if (cur.part) applyPart(r, cur, inp.value);
+        else { r.ov[carrier][x.key] = inp.value; r.edited = true; }
+        refresh(idx, x.key);
+      });
+      cp.addEventListener('click', function () { copyText(inp.value, cp); });
+    });
+    judgeCard(box, r);
+    return box;
+  }
+  function judgeCard(box, r) {
+    var f = fieldsOf(r);
+    f.forEach(function (x) {
+      var row = box.querySelector('.fld[data-key="' + x.key + '"]');
+      if (!row) return;
+      var j = AS.judge(x, f), n = row.querySelector('.n'), er = row.querySelector('.er');
+      n.textContent = x.max ? fmtN(j.count) + '／' + x.max : '';
+      n.className = 'n' + (j.err ? ' over' : '');
+      er.textContent = j.err;
+      er.hidden = !j.err;
+      row.classList.toggle('bad', !!j.err);
+    });
+  }
+  // 手で直したあと: 欄の並びが同じなら値だけ入れ替える（入力中の欄は触らない）
+  function refresh(idx, key) {
+    var r = rows[idx], host = document.querySelector('.card[data-idx="' + idx + '"]');
+    if (!host) return;
+    var f = fieldsOf(r), keys = Array.prototype.map.call(host.querySelectorAll('.fld'), function (d) { return d.dataset.key; });
+    if (keys.join() !== f.map(function (x) { return x.key; }).join()) {
+      var nb = buildCard(r, idx); host.replaceWith(nb); growAll(nb);
+      var again = document.getElementById('f' + idx + '-' + key);
+      if (again) { again.focus(); try { again.setSelectionRange(again.value.length, again.value.length); } catch (e) { /* 何もしない */ } }
+    } else {
+      f.forEach(function (x) {
+        var inp = document.getElementById('f' + idx + '-' + x.key);
+        if (inp && inp !== document.activeElement && inp.value !== x.value) { inp.value = x.value; grow(inp); }
+      });
+      judgeCard(host, r);
+    }
+    updateSummary(idx);
+  }
+  function summaryText(r) {
+    var who = (r.name || '（名前なし）') + (r.name ? ' ' + r.honor : '');
+    var f = fieldsOf(r), prev;
+    if (carrier === 'clickpost') prev = f.filter(function (x) { return /^cp\d/.test(x.key) && x.value; }).map(function (x) { return x.value; }).join('／');
+    else prev = f.filter(function (x) { return x.key !== 'name' && x.key !== 'honor' && x.key !== 'sei' && x.key !== 'mei' && x.key !== 'tel' && x.value; }).map(function (x) { return x.value; }).join('／');
+    return { who: who, prev: prev };
+  }
+  function updateSummary(idx) {
+    var d = document.querySelector('details.entry[data-idx="' + idx + '"]');
+    if (!d) return;
+    var r = rows[idx], s = summaryText(r), sm = d.querySelector('summary');
+    sm.textContent = '';
+    var who = el('span', 'who', (idx + 1) + '. ' + s.who);
+    sm.appendChild(who);
+    var nc = r.checks.length + (!AS.cpIntact(r) ? 1 : 0), ne = rowProblems(r).length;
+    if (nc) sm.appendChild(el('span', 'badge chk', '確認' + nc));
+    if (ne) sm.appendChild(el('span', 'badge err', '字数・形' + ne));
+    sm.appendChild(el('span', 'prev', s.prev || '（住所なし）'));
+  }
+
+  function grow(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+  function growAll(root) { Array.prototype.forEach.call((root || document).querySelectorAll('textarea.fi'), grow); }
+  function render() {
+    var res = $('result');
+    res.textContent = '';
+    res.classList.remove('single');
+    $('csv').hidden = !rows.length || carrier === 'yamato';
+    $('ymt-note').hidden = !rows.length || carrier !== 'yamato';
+    $('csv-cp').hidden = carrier !== 'clickpost';
+    $('csv-yp').hidden = carrier !== 'yupack';
+    $('csv-go').textContent = rows.length + '件をCSVにする';
+    if (!$('src').value.trim()) { res.appendChild(el('p', 'empty', '左（スマホでは上）の欄に、届いた文を貼ってください。')); return; }
+    if (!rows.length) { res.appendChild(el('p', 'empty', '郵便番号か、都道府県から始まる住所が見つかりませんでした。都道府県から書いた住所を貼ってください。')); return; }
+    if (over) res.appendChild(el('p', 'msg err', '41人目以降（' + over + '人分）は表示していません。1回40人までです。'));
+    if (truncated) res.appendChild(el('p', 'msg err', '5,000字を超えた分は読んでいません。'));
+    if (rows.length === 1) {
+      res.classList.add('single');
+      res.appendChild(buildCard(rows[0], 0));
+      growAll(res);
+      return;
+    }
+    res.appendChild(el('p', 'count-h', rows.length + '人分に分けました'));
+    rows.forEach(function (r, i) {
+      var d = el('details', 'entry'); d.dataset.idx = i;
+      d.appendChild(el('summary'));
+      d.appendChild(buildCard(r, i));
+      d.addEventListener('toggle', function () { if (d.open) growAll(d); });
+      res.appendChild(d);
+      updateSummary(i);
+    });
+  }
+
+  function reparse() {
+    var t = $('src').value;
+    $('src-n').textContent = t.length.toLocaleString();
+    var p = AS.parse(t);
+    rows = p.rows.map(function (r) { r.ov = { clickpost: {}, yupack: {}, yamato: {} }; r.edited = false; return r; });
+    over = p.over; truncated = p.truncated;
+    hideCsvMsg();
+    render();
+  }
+  var timer = 0;
+  $('src').addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(reparse, 150); });
+  $('ex1').addEventListener('click', function () { $('src').value = AS.SAMPLE_ONE; reparse(); });
+  $('ex3').addEventListener('click', function () { $('src').value = AS.SAMPLE_MANY; reparse(); });
+  $('clr').addEventListener('click', function () { $('src').value = ''; reparse(); $('src').focus(); });
+
+  // ---- 送り方のタブ ----
+  function setCarrier(c, focus) {
+    carrier = c; sSet(KEY_C, c);
+    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+      var on = b.dataset.c === c; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1;
+      if (on && focus) b.focus();
+    });
+    $('cnote').textContent = CNOTE[c];
+    hideCsvMsg();
+    render();
+  }
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tabs button'));
+  tabs.forEach(function (b, i) {
+    b.addEventListener('click', function () { setCarrier(b.dataset.c); });
+    b.addEventListener('keydown', function (e) {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      var n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      setCarrier(n.dataset.c, true);
+    });
+  });
+
+  // ---- コピー ----
+  function copyText(t, btn) {
+    function done(ok) { var o = btn.textContent; btn.textContent = ok ? 'コピーしました' : 'コピーできません'; setTimeout(function () { btn.textContent = o === 'コピーしました' || o === 'コピーできません' ? 'コピー' : o; }, 1200); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () { done(true); }, function () { done(fallbackCopy(t)); });
+    } else done(fallbackCopy(t));
+  }
+  function fallbackCopy(t) {
+    var ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px';
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove(); return ok;
+  }
+
+  // ---- ご依頼主 ----
+  var SF = ['name', 'zip', 'pref', 'city', 'num', 'bld', 'tel'];
+  function senderGet() {
+    return { name: $('s-name').value.trim(), zip: AS.norm($('s-zip').value).trim(), pref: $('s-pref').value.trim(), city: $('s-city').value.trim(),
+      num: AS.norm($('s-num').value).trim(), building: $('s-bld').value.trim(), tel: AS.norm($('s-tel').value).trim() };
+  }
+  function senderSave() {
+    var s = senderGet(), any = SF.some(function (k) { return $('s-' + k).value.trim(); });
+    if (any) sSet(KEY_S, JSON.stringify(s)); else sDel(KEY_S);
+    senderStatus();
+  }
+  function senderStatus() {
+    var miss = AS.senderProblems(senderGet());
+    $('sender-st').textContent = miss.length ? '（未入力: ' + miss.join('・') + '）' : '（入力済み）';
+  }
+  (function senderLoad() {
+    var raw = sGet(KEY_S);
+    if (!raw || raw.length > 5000) return;
+    try {
+      var s = JSON.parse(raw);
+      if (!s || typeof s !== 'object') return;
+      var map = { name: 'name', zip: 'zip', pref: 'pref', city: 'city', num: 'num', bld: 'building', tel: 'tel' };
+      SF.forEach(function (k) { var v = s[map[k]]; if (typeof v === 'string') $('s-' + k).value = v.slice(0, 25); });
+    } catch (e) { /* 壊れていれば読まない */ }
+  })();
+  SF.forEach(function (k) { $('s-' + k).addEventListener('input', senderSave); });
+  $('s-split').addEventListener('click', function () {
+    var p = AS.parse($('s-paste').value).rows[0];
+    var m = $('s-msg'); m.hidden = false;
+    if (!p) { m.className = 'msg err'; m.textContent = '郵便番号か、都道府県から始まる住所が見つかりませんでした'; return; }
+    $('s-name').value = p.name; $('s-zip').value = p.zip; $('s-pref').value = p.pref; $('s-city').value = p.city + p.town;
+    $('s-num').value = AS.numPart(p); $('s-bld').value = p.building; $('s-tel').value = p.tel;
+    senderSave();
+    m.className = 'msg ok'; m.textContent = '入れました。分け方を確認してください';
+  });
+  $('s-clear').addEventListener('click', function () {
+    SF.forEach(function (k) { $('s-' + k).value = ''; }); $('s-paste').value = ''; sDel(KEY_S); senderStatus();
+    var m = $('s-msg'); m.hidden = false; m.className = 'msg ok'; m.textContent = 'ご依頼主の情報を消しました';
+  });
+  senderStatus();
+
+  // ---- CSV ----
+  function hideCsvMsg() { $('csv-msg').hidden = true; $('csv-fb').hidden = true; }
+  function csvMsg(t, kind) { var m = $('csv-msg'); m.hidden = false; m.className = 'msg ' + kind; m.textContent = t; }
+  function ymd() { var d = new Date(); return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0'); }
+  $('csv-go').addEventListener('click', function () {
+    hideCsvMsg();
+    if (!rows.length) return;
+    var probs = [];
+    rows.forEach(function (r, i) {
+      rowProblems(r).forEach(function (e) { probs.push((i + 1) + '人目の' + e); });
+      var fv = {}; fieldsOf(r).forEach(function (x) { fv[x.key] = x.value; if (AS.badLead(x.value)) probs.push((i + 1) + '人目の' + x.label + 'が「' + x.value.charAt(0) + '」で始まっています。先頭の記号を外してください'); });
+      AS.missing(carrier, fv).forEach(function (m) { probs.push((i + 1) + '人目の' + m + 'が空です（必須）'); });
+    });
+    var text, name;
+    if (carrier === 'clickpost') {
+      var nz = AS.norm($('naiyo').value).trim();
+      if (!nz) probs.push('内容品を入れてください（必須）');
+      else if (AS.width(nz) > 15) probs.push('内容品が全角15字・半角30字を超えています');
+      if (AS.badLead(nz)) probs.push('内容品の先頭の記号を外してください');
+      if (probs.length) { csvMsg('書き出す前に直してください: ' + probs.slice(0, 6).join('／') + (probs.length > 6 ? ' ほか' + (probs.length - 6) + '件' : ''), 'err'); return; }
+      rows.forEach(function (r) { r.cp = fieldsOf(r).filter(function (x) { return /^cp\d/.test(x.key); }).map(function (x) { return x.value; }); });
+      text = AS.csvClickpost(rows, nz); name = 'clickpost_' + ymd() + '.csv';
+    } else {
+      var kind = document.querySelector('input[name=ypk]:checked').value, item = $('ypitem').value.trim(), snd = senderGet();
+      if (kind === 'pack' && !item) probs.push('品名を入れてください（ゆうパックは必須）');
+      if (AS.badLead(item)) probs.push('品名の先頭の記号を外してください');
+      Object.keys(snd).forEach(function (k) { if (AS.badLead(snd[k])) probs.push('ご依頼主の欄の先頭の記号（' + snd[k].charAt(0) + '）を外してください'); });
+      var miss = AS.senderProblems(snd);
+      if (miss.length) { probs.push('ご依頼主の' + miss.join('・') + 'を入れてください'); $('sender-box').open = true; }
+      if (probs.length) { csvMsg('書き出す前に直してください: ' + probs.slice(0, 6).join('／') + (probs.length > 6 ? ' ほか' + (probs.length - 6) + '件' : ''), 'err'); return; }
+      rows.forEach(function (r) { var o = {}; fieldsOf(r).forEach(function (x) { o[x.key] = x.value; }); r.yp = o; });
+      text = AS.csvYupack(rows, { kind: kind, item: item }, snd); name = 'yupack_' + ymd() + '.csv';
+    }
+    var enc = AS.toSjis(text);
+    if (enc.bad) { csvMsg('取り込み先で使えない可能性がある字があるため、止めました: 「' + enc.bad.slice(0, 10).join('」「') + '」（Shift-JISにない字・①や髙などの機種依存の字）。別の字に直してください', 'err'); return; }
+    deliver(enc.bytes, name, text);
+  });
+  function deliver(bytes, name, text) {
+    if (AS.isIOS(navigator.userAgent, navigator.maxTouchPoints)) {
+      // iPhone・iPad: a.download は効かないので共有シートへ。await を挟まずに同期で呼ぶ
+      var file = null, shared = false;
+      try {
+        if (navigator.share && navigator.canShare) {
+          var f1 = new File([bytes], name, { type: 'text/csv' });
+          if (navigator.canShare({ files: [f1] })) file = f1;
+          else { var f2 = new File([bytes], name, { type: 'text/plain' }); if (navigator.canShare({ files: [f2] })) file = f2; }
+        }
+        if (file) {
+          navigator.share({ files: [file] }).then(function () { csvMsg('共有の画面から保存した場合は、「ファイル」アプリに「' + name + '」があるか確認してください', 'ok'); })
+            .catch(function (e) { if (!e || e.name !== 'AbortError') showFb(text); });
+          shared = true;
+        }
+      } catch (e) { shared = false; }
+      if (!shared) showFb(text);
+      return;
+    }
+    var blob = new Blob([bytes], { type: 'text/csv' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    csvMsg('「' + name + '」を書き出しました（' + rows.length + '件・Shift-JIS）。ダウンロードフォルダを確認してください', 'ok');
+  }
+  function showFb(text) { $('csv-fb').hidden = false; var ta = $('csv-text'); ta.value = text; ta.focus(); ta.select(); try { ta.setSelectionRange(0, ta.value.length); } catch (e) { /* 何もしない */ } }
+
+  var rt = 0;
+  window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(function () { growAll(); }, 100); });
+  setCarrier(carrier);
+  if ($('src').value) reparse();
+})();
+</script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js"
+        data-cf-beacon='{"token": "b4c9f7e78daf4edb84ef52b88633f649"}'></script>
+</body>
+</html>
